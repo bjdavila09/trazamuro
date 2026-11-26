@@ -892,10 +892,9 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   function isStandalone() { return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true; }
   window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferredInstall = e; });
   window.addEventListener('appinstalled', function () { deferredInstall = null; $('tabInstall').hidden = true; setTab('pared'); });
-  $('tabInstall').hidden = isStandalone();
   var savedTab = 'pared';
   try { savedTab = localStorage.getItem('trazamuro-tab') || 'pared'; } catch (e) {}
-  if (savedTab === 'instalar' && isStandalone()) savedTab = 'pared';
+  if (isStandalone()) { $('tabInstall').hidden = true; if (savedTab === 'instalar') savedTab = 'pared'; }
   setTab(savedTab);
   $('tabs').addEventListener('click', function (e) { var b = e.target.closest ? e.target.closest('.tab') : null; if (b) setTab(b.dataset.tab); });
   $('installBtn').addEventListener('click', async function () {
