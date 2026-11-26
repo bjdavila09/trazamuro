@@ -208,6 +208,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
       <section class="step" data-tab="area">
         <h2>Esquinas</h2>
         <label class="check"><input id="lock" type="checkbox">Fijar esquinas</label>
+        <label class="check"><input id="lightMarks" type="checkbox">Marcas claras sobre fondo oscuro</label>
         <div class="row">
           <button class="btn primary" id="detectBtn" type="button">Detectar marcas negras</button>
           <button class="btn" id="trackBtn" type="button">Activar seguimiento</button>
@@ -602,7 +603,8 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     if (pc.width !== PW || pc.height !== ph) { pc.width = PW; pc.height = ph; }
     pctx.imageSmoothingQuality = 'high'; pctx.drawImage(S.bg, 0, 0, PW, ph);
     var d = pctx.getImageData(0, 0, PW, ph).data, g = new Uint8Array(PW * ph), hist = new Uint32Array(256), i;
-    for (i = 0; i < PW * ph; i++) { var v = (d[i * 4] * 77 + d[i * 4 + 1] * 150 + d[i * 4 + 2] * 29) >> 8; g[i] = v; hist[v]++; }
+    var inv = $('lightMarks').checked;
+    for (i = 0; i < PW * ph; i++) { var v = (d[i * 4] * 77 + d[i * 4 + 1] * 150 + d[i * 4 + 2] * 29) >> 8; if (inv) v = 255 - v; g[i] = v; hist[v]++; }
     var acc = 0, med = 128, half = PW * ph / 2;
     for (i = 0; i < 256; i++) { acc += hist[i]; if (acc >= half) { med = i; break; } }
     return { g: g, w: PW, h: ph, thr: Math.max(25, Math.min(110, med * 0.42)) };
