@@ -114,7 +114,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     <section class="stage-col">
       <div class="stage" id="stage"><canvas id="cv" aria-label="Vista de la pared con el diseño superpuesto"></canvas></div>
       <p class="hint">Arrastra los puntos 1 a 4 hasta las marcas de las esquinas, en este orden: arriba izquierda, arriba derecha, abajo derecha, abajo izquierda. Toca una celda para activarla.</p>
-      <p class="hint">Esta versión no sigue la pared. Si usas la cámara en vivo, deja el celular fijo en un soporte mientras dibujas.</p>
+      <p class="hint">Con la cámara en vivo y el seguimiento activo, el dibujo se recoloca si mueves poco el celular. Si no lo activas, deja el celular fijo en un soporte.</p>
       <p id="note" class="note" role="status" hidden></p>
     </section>
 
@@ -126,7 +126,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
           <label class="btn"><input class="sr" id="wallFile" type="file" accept="image/*">Elegir de la galería</label>
           <button class="btn" id="liveBtn" type="button">Cámara en vivo</button>
         </div>
-        <p class="help">Antes de fotografiar, pega 4 marcas (cinta o puntos de lápiz) en las esquinas del área. «Tomar foto» abre la cámara del celular. «Elegir de la galería» usa una foto que ya tengas. La cámara en vivo muestra la pared en tiempo real y solo funciona al abrir la página en un navegador.</p>
+        <p class="help">Antes de fotografiar, pega 4 cuadros de cinta negra mate en las esquinas del área. «Tomar foto» abre la cámara del celular. «Elegir de la galería» usa una foto que ya tengas. La cámara en vivo muestra la pared en tiempo real y solo funciona al abrir la página en un navegador.</p>
       </section>
 
       <section class="step">
@@ -151,7 +151,12 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
       <section class="step">
         <h2><span class="n">4</span>Esquinas</h2>
         <label class="check"><input id="lock" type="checkbox">Fijar esquinas</label>
-        <div class="row"><button class="btn" id="resetQuad" type="button">Restablecer esquinas</button></div>
+        <div class="row">
+          <button class="btn primary" id="detectBtn" type="button">Detectar marcas negras</button>
+          <button class="btn" id="trackBtn" type="button">Activar seguimiento</button>
+          <button class="btn" id="resetQuad" type="button">Restablecer esquinas</button>
+        </div>
+        <p class="help" id="trackStatus" role="status">Pega 4 cuadros de cinta negra mate en las esquinas y toca «Detectar marcas negras». Con la cámara en vivo, «Activar seguimiento» las sigue si mueves un poco el celular.</p>
       </section>
 
       <section class="step">
@@ -194,7 +199,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   var S = {
     bg: null, bgW: 0, bgH: 0, quad: [], areaW: 100, areaH: 100, cols: 4, rows: 4,
     opacity: 0.65, mode: 'full', onlyCell: true, focus: false, grid: true, locked: false,
-    cell: { c: 1, r: 1 }, done: new Set(), srcFull: null, srcEdge: null, live: false, stream: null
+    cell: { c: 1, r: 1 }, done: new Set(), srcFull: null, srcEdge: null, live: false, stream: null, track: null, trackState: []
   };
   var wallSample = true, designSample = true;
   var cw = 0, ch = 0, dpr = 1, view = { s: 1, tx: 0, ty: 0 }, dirty = true, dragging = -1, grab = { dx: 0, dy: 0 }, H = null;
@@ -247,8 +252,8 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   /* ---------- imágenes de ejemplo ---------- */
   function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; var t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
   function marker(g, x, y) {
-    g.fillStyle = '#1c1c1c'; g.beginPath(); g.arc(x, y, 10, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = '#f2f2f2'; g.lineWidth = 2; g.beginPath(); g.moveTo(x - 6, y); g.lineTo(x + 6, y); g.moveTo(x, y - 6); g.lineTo(x, y + 6); g.stroke();
+    g.save(); g.translate(x, y); g.rotate(0.07 * (x > 600 ? -1 : 1));
+    g.fillStyle = '#171717'; g.fillRect(-17, -16, 34, 32); g.restore();
   }
   function makeSampleWall() {
     var c = document.createElement('canvas'); c.width = 1200; c.height = 900; var g = c.getContext('2d');
@@ -330,7 +335,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     var x0 = (S.bgW - w) / 2, y0 = (S.bgH - h) / 2;
     S.quad = [{ x: x0, y: y0 }, { x: x0 + w, y: y0 }, { x: x0 + w, y: y0 + h }, { x: x0, y: y0 + h }];
   }
-  function setWall(src, w, h) { S.bg = src; S.bgW = w; S.bgH = h; resetQuad(); cw = 0; resize(); dirty = true; }
+  function setWall(src, w, h) { stopTrack(); S.bg = src; S.bgW = w; S.bgH = h; resetQuad(); cw = 0; resize(); dirty = true; }
   function loadImage(file, cb) {
     var img = new Image(), url = URL.createObjectURL(file);
     img.onload = function () { URL.revokeObjectURL(url); cb(img); };
@@ -359,6 +364,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
 
   /* ---------- cámara en vivo ---------- */
   function stopLive(freeze) {
+    stopTrack();
     if (S.live && freeze && vid.videoWidth) {
       var c = document.createElement('canvas'); c.width = vid.videoWidth; c.height = vid.videoHeight;
       c.getContext('2d').drawImage(vid, 0, 0); S.bg = c;
@@ -461,12 +467,13 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     for (i = 0; i < S.rows; i++) { var pr = P(-0.05, (i + 0.5) / S.rows); chip(String(i + 1), pr.x, pr.y, i === S.cell.r); }
   }
   function drawHandles() {
-    if (S.locked || S.focus) return;
+    if ((S.locked && !S.track) || S.focus) return;
     S.quad.forEach(function (p, i) {
       var s = toScr(p);
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.beginPath(); ctx.arc(s.x, s.y, 12, 0, 7); ctx.stroke();
-      ctx.lineWidth = 2; ctx.strokeStyle = '#00e0d0'; ctx.beginPath(); ctx.arc(s.x, s.y, 12, 0, 7); ctx.stroke();
-      ctx.fillStyle = '#00e0d0'; ctx.beginPath(); ctx.arc(s.x, s.y, 2, 0, 7); ctx.fill();
+      var hc = handleColor(i);
+      ctx.lineWidth = 2; ctx.strokeStyle = hc; ctx.beginPath(); ctx.arc(s.x, s.y, 12, 0, 7); ctx.stroke();
+      ctx.fillStyle = hc; ctx.beginPath(); ctx.arc(s.x, s.y, 2, 0, 7); ctx.fill();
       ctx.font = '600 11px Inter, system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.strokeText(String(i + 1), s.x + 15, s.y - 12);
       ctx.fillStyle = '#fff'; ctx.fillText(String(i + 1), s.x + 15, s.y - 12);
@@ -492,7 +499,175 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     if (H) { drawWarp(dragging >= 0 ? 0.5 : (S.live ? 0.6 : 1)); drawOverlay(); }
     drawHandles(); drawLoupe();
   }
-  function tick() { if (S.live || dirty) { dirty = false; render(); } requestAnimationFrame(tick); }
+  var fcount = 0;
+  function tick() {
+    if (S.live && S.track && (++fcount % 2 === 0)) runTrack();
+    if (S.live || dirty) { dirty = false; render(); }
+    requestAnimationFrame(tick);
+  }
+
+  /* ---------- seguimiento de marcas ---------- */
+  var pc = document.createElement('canvas'), pctx = pc.getContext('2d', { willReadFrequently: true });
+  var PW = 320, DEFAULT_TRACK = 'Pega 4 cuadros de cinta negra mate en las esquinas y toca «Detectar marcas negras». Con la cámara en vivo, «Activar seguimiento» las sigue si mueves un poco el celular.';
+  function handleColor(i) {
+    if (!S.track) return '#00e0d0';
+    var st = S.trackState[i];
+    return st === 'ok' ? '#37e07a' : (st === 'est' ? '#ffb020' : '#ff4d4d');
+  }
+  function setTrackStatus(t) { $('trackStatus').textContent = t || DEFAULT_TRACK; }
+  function grabGray() {
+    var ph = Math.max(2, Math.round(PW * S.bgH / S.bgW));
+    if (pc.width !== PW || pc.height !== ph) { pc.width = PW; pc.height = ph; }
+    pctx.imageSmoothingQuality = 'high'; pctx.drawImage(S.bg, 0, 0, PW, ph);
+    var d = pctx.getImageData(0, 0, PW, ph).data, g = new Uint8Array(PW * ph), hist = new Uint32Array(256), i;
+    for (i = 0; i < PW * ph; i++) { var v = (d[i * 4] * 77 + d[i * 4 + 1] * 150 + d[i * 4 + 2] * 29) >> 8; g[i] = v; hist[v]++; }
+    var acc = 0, med = 128, half = PW * ph / 2;
+    for (i = 0; i < 256; i++) { acc += hist[i]; if (acc >= half) { med = i; break; } }
+    return { g: g, w: PW, h: ph, thr: Math.max(25, Math.min(110, med * 0.42)) };
+  }
+  function findBlobs(g, w, h, thr, minA, maxA) {
+    var n = w * h, seen = new Uint8Array(n), stack = new Int32Array(n), out = [];
+    for (var s = 0; s < n; s++) {
+      if (seen[s] || g[s] >= thr) continue;
+      var sp = 0, area = 0, sx = 0, sy = 0, x0 = w, x1 = 0, y0 = h, y1 = 0;
+      stack[sp++] = s; seen[s] = 1;
+      while (sp) {
+        var p = stack[--sp], px = p % w, py = (p - px) / w;
+        area++; sx += px; sy += py;
+        if (px < x0) x0 = px;
+        if (px > x1) x1 = px;
+        if (py < y0) y0 = py;
+        if (py > y1) y1 = py;
+        if (px > 0 && !seen[p - 1] && g[p - 1] < thr) { seen[p - 1] = 1; stack[sp++] = p - 1; }
+        if (px < w - 1 && !seen[p + 1] && g[p + 1] < thr) { seen[p + 1] = 1; stack[sp++] = p + 1; }
+        if (py > 0 && !seen[p - w] && g[p - w] < thr) { seen[p - w] = 1; stack[sp++] = p - w; }
+        if (py < h - 1 && !seen[p + w] && g[p + w] < thr) { seen[p + w] = 1; stack[sp++] = p + w; }
+      }
+      if (area < minA || area > maxA) continue;
+      var bw = x1 - x0 + 1, bh = y1 - y0 + 1, fill = area / (bw * bh), asp = bw / bh;
+      if (fill < 0.5 || asp < 0.35 || asp > 2.9) continue;
+      out.push({ x: sx / area, y: sy / area, area: area, fill: fill, edge: x0 <= 0 || y0 <= 0 || x1 >= w - 1 || y1 >= h - 1 });
+    }
+    return out;
+  }
+  function order4(p) {
+    var tl = p[0], br = p[0], tr = p[0], bl = p[0];
+    p.forEach(function (b) {
+      if (b.x + b.y < tl.x + tl.y) tl = b;
+      if (b.x + b.y > br.x + br.y) br = b;
+      if (b.x - b.y > tr.x - tr.y) tr = b;
+      if (b.x - b.y < bl.x - bl.y) bl = b;
+    });
+    return (tl === tr || tl === br || tl === bl || tr === br || tr === bl || br === bl) ? null : [tl, tr, br, bl];
+  }
+  function polyArea(q) { var s = 0; for (var i = 0; i < 4; i++) { var a = q[i], b = q[(i + 1) % 4]; s += a.x * b.y - b.x * a.y; } return Math.abs(s) / 2; }
+  function convex(q) {
+    var sg = 0;
+    for (var i = 0; i < 4; i++) {
+      var a = q[i], b = q[(i + 1) % 4], c = q[(i + 2) % 4], z = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
+      if (z === 0) return false;
+      if (sg && (z > 0) !== (sg > 0)) return false;
+      sg = z;
+    }
+    return true;
+  }
+  function pick4(blobs, n) {
+    var c = blobs.slice().sort(function (a, b) { return b.area * b.fill - a.area * a.fill; }).slice(0, 10), best = null, bs = 0;
+    for (var a = 0; a < c.length; a++) for (var b = a + 1; b < c.length; b++) for (var d = b + 1; d < c.length; d++) for (var e = d + 1; e < c.length; e++) {
+      var q = order4([c[a], c[b], c[d], c[e]]); if (!q || !convex(q)) continue;
+      var mn = 1e9, mx = 0, sum = 0;
+      q.forEach(function (p) { mn = Math.min(mn, p.area); mx = Math.max(mx, p.area); sum += p.area; });
+      var cons = Math.sqrt(mn / mx), ar = polyArea(q);
+      if (cons < 0.3 || ar < n * 0.04) continue;
+      var sc = ar * cons * Math.sqrt(sum / 4);
+      if (sc > bs) { bs = sc; best = q; }
+    }
+    return best;
+  }
+  function bary(P, Q, m) {
+    var den = (P[1].y - P[2].y) * (P[0].x - P[2].x) + (P[2].x - P[1].x) * (P[0].y - P[2].y);
+    if (Math.abs(den) < 1e-9) return null;
+    var l0 = ((P[1].y - P[2].y) * (m.x - P[2].x) + (P[2].x - P[1].x) * (m.y - P[2].y)) / den;
+    var l1 = ((P[2].y - P[0].y) * (m.x - P[2].x) + (P[0].x - P[2].x) * (m.y - P[2].y)) / den, l2 = 1 - l0 - l1;
+    return { x: l0 * Q[0].x + l1 * Q[1].x + l2 * Q[2].x, y: l0 * Q[0].y + l1 * Q[1].y + l2 * Q[2].y };
+  }
+  function stopTrack() {
+    if (!S.track) return;
+    S.track = null; S.trackState = []; $('trackBtn').textContent = 'Activar seguimiento'; setTrackStatus(''); dirty = true;
+  }
+  function findMarks(auto) {
+    var f = grabGray(), k = f.w / S.bgW, blobs = findBlobs(f.g, f.w, f.h, f.thr, 20, f.w * f.h * 0.03);
+    var viaAuto = function () {
+      var p = pick4(blobs.filter(function (b) { return !b.edge; }), f.w * f.h);
+      return p ? { pts: p, k: k } : null;
+    };
+    var viaSnap = function () {
+      var used = {}, pts = [], found = 0;
+      S.quad.forEach(function (q, i) {
+        var best = -1, bs = 1e9;
+        blobs.forEach(function (b, j) {
+          if (used[j]) return;
+          var d = Math.hypot(b.x - q.x * k, b.y - q.y * k); if (d > f.w * 0.14) return;
+          var sc = d / Math.sqrt(b.area); if (sc < bs) { bs = sc; best = j; }
+        });
+        if (best >= 0) { used[best] = 1; pts[i] = blobs[best]; found++; }
+      });
+      return found === 4 ? { pts: pts, k: k } : null;
+    };
+    return auto ? (viaAuto() || viaSnap()) : (viaSnap() || viaAuto());
+  }
+  function useMarks(m) { m.pts.forEach(function (b, i) { S.quad[i] = { x: b.x / m.k, y: b.y / m.k }; }); }
+  function detectMarks() {
+    if (!S.bg || (S.bg === vid && vid.readyState < 2)) return;
+    var m = findMarks(true);
+    if (!m) { note('No encontré 4 marcas negras claras. Usa cinta negra mate, cuadrada y sin sombra encima, o coloca los puntos a mano.'); return; }
+    stopTrack(); useMarks(m); note('Encontré las 4 marcas negras y puse los puntos sobre ellas. Revisa que cada punto quede en su marca.'); dirty = true;
+  }
+  function startTrack() {
+    if (!S.live || vid.readyState < 2) { note('El seguimiento necesita la cámara en vivo. Actívala primero.'); return; }
+    var m = findMarks(false);
+    if (!m) { note('No encontré las 4 marcas negras. Revisa que se vean oscuras, sin sombra encima, y que estén las 4 dentro del encuadre.'); return; }
+    useMarks(m);
+    S.track = { refs: m.pts.map(function (b) { return b.area; }), last: 4 }; S.trackState = ['ok', 'ok', 'ok', 'ok'];
+    $('trackBtn').textContent = 'Detener seguimiento'; setTrackStatus('Siguiendo 4 de 4 marcas.'); note(''); dirty = true;
+  }
+  function runTrack() {
+    var T = S.track; if (!T || vid.readyState < 2) return;
+    var f = grabGray(), k = f.w / S.bgW, blobs = findBlobs(f.g, f.w, f.h, f.thr, 8, f.w * f.h * 0.08);
+    var R = f.w * 0.2, cands = [], i;
+    S.quad.forEach(function (q, ci) {
+      blobs.forEach(function (b, j) {
+        var ratio = b.area / T.refs[ci]; if (ratio < 0.3 || ratio > 3.2) return;
+        var d = Math.hypot(b.x - q.x * k, b.y - q.y * k); if (d > R) return;
+        cands.push({ i: ci, j: j, score: d + 12 * Math.abs(Math.log(ratio)) });
+      });
+    });
+    cands.sort(function (a, b) { return a.score - b.score; });
+    var ci = {}, bj = {}, nb = [];
+    cands.forEach(function (c) { if (ci[c.i] !== undefined || bj[c.j]) return; ci[c.i] = c.j; bj[c.j] = 1; nb[c.i] = blobs[c.j]; });
+    var ok = [], miss = -1;
+    for (i = 0; i < 4; i++) { if (nb[i]) ok.push(i); else miss = i; }
+    var st = [], np = [];
+    if (ok.length === 4) {
+      for (i = 0; i < 4; i++) { np[i] = { x: nb[i].x / k, y: nb[i].y / k }; T.refs[i] = T.refs[i] * 0.8 + nb[i].area * 0.2; st[i] = 'ok'; }
+    } else if (ok.length === 3) {
+      var P = ok.map(function (i) { return S.quad[i]; }), Q = ok.map(function (i) { return { x: nb[i].x / k, y: nb[i].y / k }; });
+      var est = bary(P, Q, S.quad[miss]);
+      for (i = 0; i < 4; i++) { if (nb[i]) { np[i] = { x: nb[i].x / k, y: nb[i].y / k }; st[i] = 'ok'; } else { np[i] = est || S.quad[i]; st[i] = est ? 'est' : 'lost'; } }
+    } else {
+      for (i = 0; i < 4; i++) { np[i] = S.quad[i]; st[i] = 'lost'; }
+    }
+    for (i = 0; i < 4; i++) {
+      var q = S.quad[i];
+      S.quad[i] = st[i] === 'ok' ? { x: q.x + (np[i].x - q.x) * 0.7, y: q.y + (np[i].y - q.y) * 0.7 } : np[i];
+    }
+    S.trackState = st;
+    var n = ok.length;
+    if (n !== T.last) {
+      T.last = n;
+      setTrackStatus(n === 4 ? 'Siguiendo 4 de 4 marcas.' : (n === 3 ? 'Siguiendo 3 de 4 marcas. La cuarta se estima.' : 'Perdí las marcas. El dibujo queda donde estaba.'));
+    }
+  }
 
   /* ---------- interfaz ---------- */
   function note(msg) { var n = $('note'); n.textContent = msg || ''; n.hidden = !msg; }
@@ -551,6 +726,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
       var best = -1, bd = 36;
       S.quad.forEach(function (p, i) { var sp = toScr(p), d = Math.hypot(sp.x - x, sp.y - y); if (d < bd) { bd = d; best = i; } });
       if (best >= 0) {
+        stopTrack();
         var hp = toScr(S.quad[best]); grab = { dx: hp.x - x, dy: hp.y - y }; dragging = best;
         try { cv.setPointerCapture(e.pointerId); } catch (err) {}
         dirty = true; return;
@@ -573,7 +749,9 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   $('designFile').addEventListener('change', function (e) { loadDesignFile(e.target.files[0]); e.target.value = ''; });
   $('liveBtn').addEventListener('click', toggleLive);
   $('sampleBtn').addEventListener('click', useSample);
-  $('resetQuad').addEventListener('click', function () { resetQuad(); dirty = true; });
+  $('resetQuad').addEventListener('click', function () { stopTrack(); resetQuad(); dirty = true; });
+  $('trackBtn').addEventListener('click', function () { if (S.track) stopTrack(); else startTrack(); });
+  $('detectBtn').addEventListener('click', detectMarks);
   $('lock').addEventListener('change', function (e) { S.locked = e.target.checked; dirty = true; });
   $('focus').addEventListener('change', function (e) { S.focus = e.target.checked; dirty = true; });
   $('onlyCell').addEventListener('change', function (e) { S.onlyCell = e.target.checked; dirty = true; });
