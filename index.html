@@ -51,7 +51,12 @@ h1 { font: 700 28px/1.1 var(--font-display); margin: 0; letter-spacing: -0.01em;
 .sub { margin: 0; color: var(--muted); flex: 1 1 320px; max-width: 62ch; }
 .tag { font: 500 12px var(--font-mono); border: 1px solid var(--line); border-radius: 99px; padding: 3px 9px; color: var(--muted); }
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
-@media (max-width: 860px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 860px) {
+  .layout { display: block; }
+  .stage-col { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 4; background: var(--bg); padding-bottom: 8px; }
+  .panel { margin-top: 12px; }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+}
 .stage-col { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 .stage { background: var(--stage); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; line-height: 0; }
 canvas#cv { display: block; touch-action: none; cursor: crosshair; }
@@ -113,8 +118,6 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   <main class="layout">
     <section class="stage-col">
       <div class="stage" id="stage"><canvas id="cv" aria-label="Vista de la pared con el diseño superpuesto"></canvas></div>
-      <p class="hint">Arrastra los puntos 1 a 4 hasta las marcas de las esquinas, en este orden: arriba izquierda, arriba derecha, abajo derecha, abajo izquierda. Toca una celda para activarla.</p>
-      <p class="hint">Con la cámara en vivo y el seguimiento activo, el dibujo se recoloca si mueves poco el celular. Si no lo activas, deja el celular fijo en un soporte.</p>
       <p id="note" class="note" role="status" hidden></p>
     </section>
 
@@ -157,6 +160,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
           <button class="btn" id="resetQuad" type="button">Restablecer esquinas</button>
         </div>
         <p class="help" id="trackStatus" role="status">Pega 4 cuadros de cinta negra mate en las esquinas y toca «Detectar marcas negras». Con la cámara en vivo, «Activar seguimiento» las sigue si mueves un poco el celular.</p>
+        <p class="help">También puedes arrastrar los puntos 1 a 4 hasta las marcas, en este orden: arriba izquierda, arriba derecha, abajo derecha, abajo izquierda. Toca una celda para activarla. Sin seguimiento, deja el celular fijo en un soporte.</p>
       </section>
 
       <section class="step">
@@ -395,7 +399,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   function resize() {
     var W = stage.clientWidth; if (!W) return;
     var d = Math.min(window.devicePixelRatio || 1, 2.5);
-    var maxH = Math.max(260, Math.round(window.innerHeight * 0.7));
+    var maxH = window.innerWidth <= 860 ? Math.round(window.innerHeight * 0.45) : Math.max(260, Math.round(window.innerHeight * 0.7));
     var asp = S.bg ? S.bgW / S.bgH : 4 / 3;
     var nh = Math.max(240, Math.min(Math.round(W / asp), maxH));
     if (W === cw && nh === ch && d === dpr) return;
@@ -515,6 +519,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     return st === 'ok' ? '#37e07a' : (st === 'est' ? '#ffb020' : '#ff4d4d');
   }
   function setTrackStatus(t) { $('trackStatus').textContent = t || DEFAULT_TRACK; }
+  function say(t) { setTrackStatus(t); note(''); }
   function grabGray() {
     var ph = Math.max(2, Math.round(PW * S.bgH / S.bgW));
     if (pc.width !== PW || pc.height !== ph) { pc.width = PW; pc.height = ph; }
@@ -598,8 +603,9 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   function findMarks(auto) {
     var f = grabGray(), k = f.w / S.bgW, blobs = findBlobs(f.g, f.w, f.h, f.thr, 20, f.w * f.h * 0.03);
     var viaAuto = function () {
-      var p = pick4(blobs.filter(function (b) { return !b.edge; }), f.w * f.h);
-      return p ? { pts: p, k: k } : null;
+      var p = pick4(blobs.filter(function (b) { return !b.edge; }), f.w * f.h), cut = false;
+      if (!p) { p = pick4(blobs, f.w * f.h); cut = !!p; }
+      return p ? { pts: p, k: k, edge: cut } : null;
     };
     var viaSnap = function () {
       var used = {}, pts = [], found = 0;
@@ -617,16 +623,19 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     return auto ? (viaAuto() || viaSnap()) : (viaSnap() || viaAuto());
   }
   function useMarks(m) { m.pts.forEach(function (b, i) { S.quad[i] = { x: b.x / m.k, y: b.y / m.k }; }); }
-  function detectMarks() {
+  function detectMarks(prefix) {
+    prefix = prefix || '';
     if (!S.bg || (S.bg === vid && vid.readyState < 2)) return;
     var m = findMarks(true);
-    if (!m) { note('No encontré 4 marcas negras claras. Usa cinta negra mate, cuadrada y sin sombra encima, o coloca los puntos a mano.'); return; }
-    stopTrack(); useMarks(m); note('Encontré las 4 marcas negras y puse los puntos sobre ellas. Revisa que cada punto quede en su marca.'); dirty = true;
+    if (!m) { say(prefix + 'No encontré 4 marcas negras claras. Usa cinta negra mate, cuadrada y sin sombra encima, o coloca los puntos a mano.'); return; }
+    stopTrack(); useMarks(m);
+    say(prefix + (m.edge ? 'Encontré las 4 marcas, pero una toca el borde de la imagen y puede quedar algo descentrada. Deja las 4 completas dentro del encuadre.' : 'Encontré las 4 marcas negras y puse los puntos sobre ellas. Revisa que cada punto quede en su marca.'));
+    dirty = true;
   }
   function startTrack() {
-    if (!S.live || vid.readyState < 2) { note('El seguimiento necesita la cámara en vivo. Actívala primero.'); return; }
+    if (!S.live || vid.readyState < 2) { detectMarks('El seguimiento solo funciona con la cámara en vivo. '); return; }
     var m = findMarks(false);
-    if (!m) { note('No encontré las 4 marcas negras. Revisa que se vean oscuras, sin sombra encima, y que estén las 4 dentro del encuadre.'); return; }
+    if (!m) { say('No encontré las 4 marcas negras. Revisa que se vean oscuras, sin sombra encima, y que estén las 4 dentro del encuadre.'); return; }
     useMarks(m);
     S.track = { refs: m.pts.map(function (b) { return b.area; }), last: 4 }; S.trackState = ['ok', 'ok', 'ok', 'ok'];
     $('trackBtn').textContent = 'Detener seguimiento'; setTrackStatus('Siguiendo 4 de 4 marcas.'); note(''); dirty = true;
@@ -751,7 +760,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   $('sampleBtn').addEventListener('click', useSample);
   $('resetQuad').addEventListener('click', function () { stopTrack(); resetQuad(); dirty = true; });
   $('trackBtn').addEventListener('click', function () { if (S.track) stopTrack(); else startTrack(); });
-  $('detectBtn').addEventListener('click', detectMarks);
+  $('detectBtn').addEventListener('click', function () { detectMarks(''); });
   $('lock').addEventListener('change', function (e) { S.locked = e.target.checked; dirty = true; });
   $('focus').addEventListener('change', function (e) { S.focus = e.target.checked; dirty = true; });
   $('onlyCell').addEventListener('change', function (e) { S.onlyCell = e.target.checked; dirty = true; });
