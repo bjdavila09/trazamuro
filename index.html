@@ -217,6 +217,18 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
         <p class="help">También puedes arrastrar los puntos 1 a 4 hasta las marcas, en este orden: arriba izquierda, arriba derecha, abajo derecha, abajo izquierda. Toca una celda para activarla. Sin seguimiento, deja el celular fijo en un soporte.</p>
       </section>
 
+      <section class="step" data-tab="area">
+        <h2>Cuadrícula de marcas</h2>
+        <p class="help">Para dibujar de cerca. Pega las marcas en filas y columnas parejas: las de los bordes son las esquinas del área y las demás quedan a la misma distancia entre sí. En pantalla se numeran por filas, desde arriba a la izquierda.</p>
+        <div class="fields">
+          <label class="field"><span>Marcas por fila</span><input id="gcols" type="number" inputmode="numeric" min="2" max="8" step="1" value="3"></label>
+          <label class="field"><span>Filas de marcas</span><input id="grows" type="number" inputmode="numeric" min="2" max="8" step="1" value="3"></label>
+        </div>
+        <label class="check"><input id="autoCell" type="checkbox" checked>Elegir la celda a la que apunta la cámara</label>
+        <div class="row"><button class="btn primary" id="gridBtn" type="button">Reconocer cuadrícula</button></div>
+        <p class="help" id="gridStatus" role="status">Aleja el celular hasta ver todas las marcas completas y toca «Reconocer cuadrícula». Con la cámara en vivo se sigue sola mientras veas al menos 4 marcas.</p>
+      </section>
+
       <section class="step" data-tab="dibujar">
         <h2>Dibujar</h2>
         <div class="slider"><label for="opacity">Opacidad</label><input id="opacity" type="range" min="5" max="100" value="65"><output id="opacityOut" for="opacity">65%</output></div>
@@ -536,6 +548,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   }
   function drawHandles() {
     if ((S.locked && !S.track) || S.focus) return;
+    if (S.track && S.track.grid) { drawGridMarks(S.track); return; }
     S.quad.forEach(function (p, i) {
       var s = toScr(p);
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.beginPath(); ctx.arc(s.x, s.y, 12, 0, 7); ctx.stroke();
@@ -662,7 +675,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   }
   function stopTrack() {
     if (!S.track) return;
-    S.track = null; S.trackState = []; $('trackBtn').textContent = 'Activar seguimiento'; setTrackStatus(''); dirty = true;
+    S.track = null; S.trackState = []; $('trackBtn').textContent = 'Activar seguimiento'; $('gridBtn').textContent = 'Reconocer cuadrícula'; setTrackStatus(''); gsay(''); dirty = true;
   }
   function findMarks(auto) {
     var f = grabGray(), k = f.w / S.bgW, blobs = findBlobs(f.g, f.w, f.h, f.thr, 20, f.w * f.h * 0.03);
@@ -704,8 +717,226 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     S.track = { refs: m.pts.map(function (b) { return b.area; }), last: 4 }; S.trackState = ['ok', 'ok', 'ok', 'ok'];
     $('trackBtn').textContent = 'Detener seguimiento'; setTrackStatus('Siguiendo 4 de 4 marcas.'); note(''); dirty = true;
   }
+  /* ---------- cuadrícula de marcas (varias marcas, identificadas por posición) ---------- */
+  var DEFAULT_GRID = 'Aleja el celular hasta ver todas las marcas completas y toca «Reconocer cuadrícula». Con la cámara en vivo se sigue sola mientras veas al menos 4 marcas.';
+  function gsay(t) { $('gridStatus').textContent = t || DEFAULT_GRID; if (t) note(''); }
+  function gridNodes(nc, nr) {
+    var a = [];
+    for (var j = 0; j < nr; j++) for (var i = 0; i < nc; i++) a.push({ id: j * nc + i + 1, u: i / (nc - 1), v: j / (nr - 1) });
+    return a;
+  }
+  /* homografía por mínimos cuadrados: (u,v) de la pared -> (x,y) de la imagen. Devuelve [a..h] como proj() */
+  function fitH(U, P) {
+    var A = [], i, j, k, sc = 0.01;
+    for (i = 0; i < 8; i++) A.push(new Array(9).fill(0));
+    for (i = 0; i < U.length; i++) {
+      var u = U[i].u, v = U[i].v, x = P[i].x * sc, y = P[i].y * sc;
+      var r1 = [u, v, 1, 0, 0, 0, -u * x, -v * x], r2 = [0, 0, 0, u, v, 1, -u * y, -v * y];
+      for (j = 0; j < 8; j++) { for (k = 0; k < 8; k++) A[j][k] += r1[j] * r1[k] + r2[j] * r2[k]; A[j][8] += r1[j] * x + r2[j] * y; }
+    }
+    for (i = 0; i < 8; i++) {
+      var pv = i;
+      for (j = i + 1; j < 8; j++) if (Math.abs(A[j][i]) > Math.abs(A[pv][i])) pv = j;
+      if (Math.abs(A[pv][i]) < 1e-12) return null;
+      var tmp = A[i]; A[i] = A[pv]; A[pv] = tmp;
+      for (j = i + 1; j < 8; j++) { var fc = A[j][i] / A[i][i]; for (k = i; k < 9; k++) A[j][k] -= fc * A[i][k]; }
+    }
+    var p = new Array(8);
+    for (i = 7; i >= 0; i--) { var s = A[i][8]; for (k = i + 1; k < 8; k++) s -= A[i][k] * p[k]; p[i] = s / A[i][i]; }
+    for (i = 0; i < 6; i++) p[i] /= sc;
+    for (i = 0; i < 8; i++) if (!isFinite(p[i])) return null;
+    return p;
+  }
+  function jacDet(M, u, v) {
+    var e = 0.01, a = proj(M, u, v), b = proj(M, u + e, v), c = proj(M, u, v + e);
+    return Math.abs(((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) / (e * e));
+  }
+  function gridCorners(M, k) {
+    var cs = [[0, 0], [1, 0], [1, 1], [0, 1]], out = [], lim = 30 * Math.max(S.bgW, S.bgH);
+    for (var i = 0; i < 4; i++) {
+      var u = cs[i][0], v = cs[i][1];
+      if (!(M[6] * u + M[7] * v + 1 > 0.02)) return null;
+      var p = proj(M, u, v), x = p.x / k, y = p.y / k;
+      if (!isFinite(x) || !isFinite(y) || Math.abs(x) > lim || Math.abs(y) > lim) return null;
+      out.push({ x: x, y: y });
+    }
+    return out;
+  }
+  function spreadOK(use, nc, nr) {
+    var n = use.length, mu = 0, mv = 0, i;
+    for (i = 0; i < n; i++) { mu += use[i].n.u; mv += use[i].n.v; }
+    mu /= n; mv /= n;
+    var vu = 0, vv = 0, cu = 0;
+    for (i = 0; i < n; i++) { var du = use[i].n.u - mu, dv = use[i].n.v - mv; vu += du * du; vv += dv * dv; cu += du * dv; }
+    vu /= n; vv /= n; cu /= n;
+    var su = 1 / (nc - 1), sv = 1 / (nr - 1);
+    return vu * vv - cu * cu > 0.01 * su * su * sv * sv;
+  }
+  /* reconoce la cuadrícula completa: necesita ver las nc×nr marcas enteras */
+  function calibGrid(blobs, nc, nr) {
+    var N = nc * nr, c = blobs.filter(function (b) { return !b.edge; }), i;
+    if (c.length < N) return { ok: false, msg: 'Veo ' + c.length + ' marcas completas y la cuadrícula tiene ' + N + ' (' + nc + ' × ' + nr + '). Aleja el celular hasta que se vean todas, sin que ninguna toque el borde de la imagen.' };
+    c.sort(function (a, b) { return b.area * b.fill - a.area * a.fill; });
+    var top = c.slice(0, N), mn = 1e9, mx = 0;
+    top.forEach(function (b) { mn = Math.min(mn, b.area); mx = Math.max(mx, b.area); });
+    if (mn / mx < 0.2) return { ok: false, msg: 'Las ' + N + ' marcas más grandes que veo tienen tamaños muy distintos. Usa marcas del mismo tamaño y sin sombras encima.' };
+    var q = order4(top), H0 = q && homo(q);
+    if (!H0) return { ok: false, msg: 'No pude ordenar las marcas. Sostén el celular derecho, de frente a la pared, y que las marcas formen filas y columnas parejas.' };
+    var m = H0.inv, nodes = gridNodes(nc, nr), slot = new Array(N), U = [], P = [];
+    for (i = 0; i < N; i++) {
+      var b = top[i], w = m[6] * b.x + m[7] * b.y + m[8];
+      var fi = (m[0] * b.x + m[1] * b.y + m[2]) / w * (nc - 1), fj = (m[3] * b.x + m[4] * b.y + m[5]) / w * (nr - 1);
+      var ci = Math.round(fi), cj = Math.round(fj);
+      if (ci < 0 || cj < 0 || ci >= nc || cj >= nr || Math.abs(fi - ci) > 0.3 || Math.abs(fj - cj) > 0.3 || slot[cj * nc + ci])
+        return { ok: false, msg: 'Las marcas que veo no forman una cuadrícula de ' + nc + ' × ' + nr + '. Revisa que no sobre ni falte ninguna y que estén en filas y columnas parejas.' };
+      slot[cj * nc + ci] = b;
+    }
+    for (i = 0; i < N; i++) { U.push({ u: nodes[i].u, v: nodes[i].v }); P.push({ x: slot[i].x, y: slot[i].y }); }
+    var M = fitH(U, P);
+    if (!M) return { ok: false, msg: 'No pude calcular la posición de la cuadrícula.' };
+    var ra = [];
+    for (i = 0; i < N; i++) ra.push(slot[i].area / Math.max(1e-6, jacDet(M, nodes[i].u, nodes[i].v)));
+    ra.sort(function (a, b) { return a - b; });
+    return { ok: true, M: M, refA: ra[ra.length >> 1] };
+  }
+  function applyGrid(T, M, smooth) {
+    var cs = gridCorners(M, T.k); if (!cs) return false;
+    for (var i = 0; i < 4; i++) {
+      var q = S.quad[i];
+      S.quad[i] = smooth ? { x: q.x + (cs[i].x - q.x) * 0.75, y: q.y + (cs[i].y - q.y) * 0.75 } : cs[i];
+    }
+    T.M = M;
+    T.pos = T.nodes.map(function (n) { var p = proj(M, n.u, n.v); return { x: p.x / T.k, y: p.y / T.k }; });
+    return true;
+  }
+  function autoPickCell() {
+    if (!$('autoCell').checked) return;
+    var Hh = homo(S.quad); if (!Hh) return;
+    var m = Hh.inv, X = S.bgW / 2, Y = S.bgH / 2, w = m[6] * X + m[7] * Y + m[8];
+    var u = (m[0] * X + m[1] * Y + m[2]) / w, v = (m[3] * X + m[4] * Y + m[5]) / w;
+    if (!(u >= 0 && u < 1 && v >= 0 && v < 1)) return;
+    var fu = u * S.cols, fv = v * S.rows, c = S.cell.c, r = S.cell.r, g = 0.08;
+    if (fu >= c - g && fu <= c + 1 + g && fv >= r - g && fv <= r + 1 + g) return;
+    S.cell = { c: Math.min(S.cols - 1, Math.floor(fu)), r: Math.min(S.rows - 1, Math.floor(fv)) }; refreshCell();
+  }
+  function startGrid() {
+    if (S.track && S.track.grid) { stopTrack(); return; }
+    if (!S.bg || (S.bg === vid && vid.readyState < 2)) return;
+    var nc = Math.max(2, Math.min(8, Math.round(+$('gcols').value) || 3)), nr = Math.max(2, Math.min(8, Math.round(+$('grows').value) || 3));
+    $('gcols').value = nc; $('grows').value = nr;
+    var f = grabGray(), blobs = findBlobs(f.g, f.w, f.h, f.thr, 8, f.w * f.h * 0.04), r = calibGrid(blobs, nc, nr);
+    if (!r.ok) { gsay(r.msg); return; }
+    stopTrack();
+    var T = { grid: true, nc: nc, nr: nr, nodes: gridNodes(nc, nr), k: f.w / S.bgW, refA: r.refA, M: r.M, pos: [], state: [], lost: 0, last: nc * nr };
+    for (var i = 0; i < nc * nr; i++) T.state[i] = 'ok';
+    if (!applyGrid(T, r.M, false)) { gsay('No pude calcular la posición de la cuadrícula.'); return; }
+    S.track = T; $('gridBtn').textContent = 'Detener cuadrícula';
+    gsay(S.live ? 'Reconocí las ' + (nc * nr) + ' marcas. Ya puedes acercarte: se sigue sola mientras veas al menos 4.' : 'Reconocí las ' + (nc * nr) + ' marcas y ajusté el área. Para seguirlas al moverte, usa la cámara en vivo.');
+    autoPickCell(); dirty = true;
+  }
+  function runGrid(T) {
+    var f = grabGray(), w = f.w, h = f.h, N = T.nodes.length, M = T.M, nodes = T.nodes, i, j;
+    var all = findBlobs(f.g, w, h, f.thr, 8, w * h * 0.08), blobs = all.filter(function (b) { return !b.edge; });
+    var pred = [], dmin = [], dsum = 0, dn = 0;
+    for (i = 0; i < N; i++) pred[i] = (M[6] * nodes[i].u + M[7] * nodes[i].v + 1 > 0.05) ? proj(M, nodes[i].u, nodes[i].v) : null;
+    for (i = 0; i < N; i++) {
+      var dm = 1e9;
+      if (pred[i]) for (j = 0; j < N; j++) if (j !== i && pred[j]) dm = Math.min(dm, Math.hypot(pred[i].x - pred[j].x, pred[i].y - pred[j].y));
+      dmin[i] = dm; if (dm < 1e8) { dsum += dm; dn++; }
+    }
+    var spacing = dn ? dsum / dn : 20, grow = 1 + Math.min(T.lost, 10) * 0.15, cands = [];
+    for (i = 0; i < N; i++) {
+      var p = pred[i]; if (!p || dmin[i] > 1e8) continue;
+      if (p.x < -w * 0.1 || p.x > w * 1.1 || p.y < -h * 0.1 || p.y > h * 1.1) continue;
+      var R = Math.max(6, Math.min(w * 0.3, dmin[i] * 0.42 * grow)), ja = T.refA * jacDet(M, nodes[i].u, nodes[i].v);
+      for (j = 0; j < blobs.length; j++) {
+        var b = blobs[j], d = Math.hypot(b.x - p.x, b.y - p.y); if (d > R) continue;
+        var ratio = b.area / ja; if (ratio < 0.35 || ratio > 2.9) continue;
+        cands.push({ i: i, j: j, s: d / R + 0.5 * Math.abs(Math.log(ratio)) });
+      }
+    }
+    cands.sort(function (a, b) { return a.s - b.s; });
+    var ni = {}, bj = {}, use = [];
+    cands.forEach(function (c) { if (ni[c.i] || bj[c.j]) return; ni[c.i] = 1; bj[c.j] = 1; use.push({ i: c.i, n: nodes[c.i], b: blobs[c.j] }); });
+    var Mn = null, greedy = use.slice();
+    if (use.length >= 4) {
+      for (var it = 0; it < 5; it++) {
+        if (!spreadOK(use, T.nc, T.nr)) { Mn = null; break; }
+        Mn = fitH(use.map(function (m) { return m.n; }), use.map(function (m) { return m.b; }));
+        if (!Mn || use.length <= 4) break;
+        var wi = -1, wr = 0;
+        for (j = 0; j < use.length; j++) {
+          var pp = proj(Mn, use[j].n.u, use[j].n.v), rr = Math.hypot(pp.x - use[j].b.x, pp.y - use[j].b.y);
+          if (rr > wr) { wr = rr; wi = j; }
+        }
+        if (wr <= Math.max(2.5, 0.08 * spacing)) break;
+        use.splice(wi, 1);
+      }
+    }
+    var fit = !!Mn && use.length >= 4 && applyGrid(T, Mn, true), n = fit ? use.length : 0, mode = 'fit';
+    var inUse = {};
+    if (fit) {
+      T.lost = 0; use.forEach(function (m) { inUse[m.i] = 1; });
+    } else if (greedy.length >= 1 && estimateMove(T, greedy)) {
+      /* menos de 4 marcas completas: solo se estima el movimiento a partir de las que se ven */
+      T.lost = 0; mode = 'est'; n = greedy.length; greedy.forEach(function (m) { inUse[m.i] = 1; });
+    } else {
+      T.lost++; mode = 'lost';
+      if (T.lost >= 6 && T.lost % 5 === 0) {
+        var rc = calibGrid(all, T.nc, T.nr);
+        if (rc.ok) { T.refA = rc.refA; if (applyGrid(T, rc.M, false)) { T.lost = 0; mode = 'fit'; n = N; for (i = 0; i < N; i++) inUse[i] = 1; } }
+      }
+    }
+    for (i = 0; i < N; i++) T.state[i] = inUse[i] ? 'ok' : (mode === 'lost' || (pred[i] && pred[i].x > 0 && pred[i].x < w && pred[i].y > 0 && pred[i].y < h) ? 'miss' : 'off');
+    if (mode !== 'lost') autoPickCell();
+    var key = mode === 'lost' ? (T.lost >= 15 ? 'lost' : T.shown) : (mode === 'est' ? 'est' : 'fit' + n);
+    if (key !== T.shown) {
+      T.shown = key;
+      if (key === 'lost') gsay('Perdí la cuadrícula. Aleja el celular hasta ver todas las marcas y se reconoce sola, o toca «Detener cuadrícula» y vuelve a reconocerla.');
+      else if (key === 'est') gsay('Veo menos de 4 marcas completas. Estimo el movimiento; mueve el celular hasta tener 4 a la vista para afinar.');
+      else gsay('Siguiendo ' + n + ' de ' + N + ' marcas.');
+    }
+    dirty = true;
+  }
+  /* con 1 a 3 marcas: traslación (1) o traslación + giro + escala (2 o más) respecto a la posición anterior */
+  function estimateMove(T, ms) {
+    var n = ms.length, M = T.M, P = [], Q = [], i, pcx = 0, pcy = 0, qcx = 0, qcy = 0;
+    for (i = 0; i < n; i++) { var p = proj(M, ms[i].n.u, ms[i].n.v); P.push(p); Q.push(ms[i].b); pcx += p.x; pcy += p.y; qcx += ms[i].b.x; qcy += ms[i].b.y; }
+    pcx /= n; pcy /= n; qcx /= n; qcy /= n;
+    var sr = 1, si = 0;
+    if (n >= 2) {
+      var num_r = 0, num_i = 0, den = 0;
+      for (i = 0; i < n; i++) {
+        var px = P[i].x - pcx, py = P[i].y - pcy, qx = Q[i].x - qcx, qy = Q[i].y - qcy;
+        num_r += qx * px + qy * py; num_i += qy * px - qx * py; den += px * px + py * py;
+      }
+      if (den < 1e-6) return false;
+      sr = num_r / den; si = num_i / den;
+      var sc = Math.hypot(sr, si); if (sc < 0.5 || sc > 2) return false;
+    }
+    var cs = [[0, 0], [1, 0], [1, 1], [0, 1]], np = [];
+    for (i = 0; i < 4; i++) {
+      var c = proj(M, cs[i][0], cs[i][1]), dx = c.x - pcx, dy = c.y - pcy;
+      np.push({ x: qcx + sr * dx - si * dy, y: qcy + si * dx + sr * dy });
+    }
+    var Hn = homo(np); if (!Hn) return false;
+    return applyGrid(T, Hn.M, true);
+  }
+  function drawGridMarks(T) {
+    ctx.font = '700 11px Inter, system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    T.nodes.forEach(function (nd, i) {
+      var st = T.state[i], p = T.pos[i]; if (!p || st === 'off') return;
+      var s = toScr(p); if (s.x < -20 || s.y < -20 || s.x > cw + 20 || s.y > ch + 20) return;
+      var col = st === 'ok' ? '#37e07a' : '#ff4d4d';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.beginPath(); ctx.arc(s.x, s.y, 12, 0, 7); ctx.stroke();
+      ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.beginPath(); ctx.arc(s.x, s.y, 12, 0, 7); ctx.stroke();
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.strokeText(String(nd.id), s.x + 15, s.y - 12);
+      ctx.fillStyle = '#fff'; ctx.fillText(String(nd.id), s.x + 15, s.y - 12);
+    });
+  }
   function runTrack() {
     var T = S.track; if (!T || vid.readyState < 2) return;
+    if (T.grid) { runGrid(T); return; }
     var f = grabGray(), k = f.w / S.bgW, blobs = findBlobs(f.g, f.w, f.h, f.thr, 8, f.w * f.h * 0.08);
     var R = f.w * 0.2, cands = [], i;
     S.quad.forEach(function (q, ci) {
@@ -830,7 +1061,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
 
   cv.addEventListener('pointerdown', function (e) {
     var rect = cv.getBoundingClientRect(), x = e.clientX - rect.left, y = e.clientY - rect.top;
-    if (S.bg && !S.locked && !S.focus) {
+    if (S.bg && !S.locked && !S.focus && !(S.track && S.track.grid)) {
       var best = -1, bd = 36;
       S.quad.forEach(function (p, i) { var sp = toScr(p), d = Math.hypot(sp.x - x, sp.y - y); if (d < bd) { bd = d; best = i; } });
       if (best >= 0) {
@@ -860,6 +1091,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   $('resetQuad').addEventListener('click', function () { stopTrack(); resetQuad(); dirty = true; });
   $('trackBtn').addEventListener('click', function () { if (S.track) stopTrack(); else startTrack(); });
   $('detectBtn').addEventListener('click', function () { detectMarks(''); });
+  $('gridBtn').addEventListener('click', startGrid);
   $('lock').addEventListener('change', function (e) { S.locked = e.target.checked; dirty = true; });
   $('focus').addEventListener('change', function (e) { S.focus = e.target.checked; dirty = true; });
   $('onlyCell').addEventListener('change', function (e) { S.onlyCell = e.target.checked; dirty = true; });
