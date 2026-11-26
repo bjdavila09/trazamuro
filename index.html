@@ -95,6 +95,9 @@ canvas#cv { display: block; touch-action: none; cursor: crosshair; }
 .slider { display: flex; align-items: center; gap: 12px; }
 .slider input { flex: 1; accent-color: var(--accent); min-width: 0; }
 .slider output { font: 500 13px var(--font-mono); width: 44px; text-align: right; }
+.slider label { min-width: 74px; }
+.slider { margin-top: 10px; }
+.seg.three { grid-template-columns: repeat(3, 1fr); }
 .cellhead { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
 .cellname { font: 700 36px/1 var(--font-display); }
 .cellmeta { font: 400 12px/1.4 var(--font-mono); color: var(--muted); }
@@ -138,7 +141,17 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
           <label class="btn"><input class="sr" id="designFile" type="file" accept="image/*">Elegir imagen</label>
           <button class="btn" id="sampleBtn" type="button">Usar ejemplo</button>
         </div>
-        <p class="help">El diseño se ajusta al área marcada. El alto se calcula con la proporción de tu imagen.</p>
+        <div class="seg three" role="radiogroup" aria-label="Ajuste del diseño">
+          <label class="opt"><input class="sr" type="radio" name="fit" id="fitContain" value="contain" checked><span>Ajustar</span></label>
+          <label class="opt"><input class="sr" type="radio" name="fit" id="fitCover" value="cover"><span>Llenar</span></label>
+          <label class="opt"><input class="sr" type="radio" name="fit" id="fitStretch" value="stretch"><span>Estirar</span></label>
+        </div>
+        <div class="slider"><label for="dsize">Tamaño</label><input id="dsize" type="range" min="10" max="300" value="100"><output id="dsizeOut" for="dsize">100%</output></div>
+        <div class="slider"><label for="dx">Mover ↔</label><input id="dx" type="range" min="-100" max="100" value="0"><output id="dxOut" for="dx">0%</output></div>
+        <div class="slider"><label for="dy">Mover ↕</label><input id="dy" type="range" min="-100" max="100" value="0"><output id="dyOut" for="dy">0%</output></div>
+        <p class="help" id="designInfo"></p>
+        <p class="help">Ajustar: entra completo sin deformarse. Llenar: cubre toda el área y recorta lo que sobre. Estirar: se deforma para ocupar toda el área. El área es el rectángulo que marcaste con las 4 esquinas.</p>
+        <div class="row" style="margin-top:8px"><button class="btn" id="designReset" type="button">Restablecer tamaño</button></div>
       </section>
 
       <section class="step">
@@ -203,7 +216,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   var S = {
     bg: null, bgW: 0, bgH: 0, quad: [], areaW: 100, areaH: 100, cols: 4, rows: 4,
     opacity: 0.65, mode: 'full', onlyCell: true, focus: false, grid: true, locked: false,
-    cell: { c: 1, r: 1 }, done: new Set(), srcFull: null, srcEdge: null, live: false, stream: null, track: null, trackState: []
+    cell: { c: 1, r: 1 }, done: new Set(), srcFull: null, srcEdge: null, live: false, stream: null, track: null, trackState: [], fit: 'contain', ds: 1, dx: 0, dy: 0
   };
   var wallSample = true, designSample = true;
   var cw = 0, ch = 0, dpr = 1, view = { s: 1, tx: 0, ty: 0 }, dirty = true, dragging = -1, grab = { dx: 0, dy: 0 }, H = null;
@@ -327,6 +340,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(c, 0, 0, w, h);
     S.srcFull = { w: w, h: h, data: g.getImageData(0, 0, w, h).data };
     S.srcEdge = toEdges(S.srcFull);
+    refreshDesign();
     if (fit) { S.areaH = Math.round(S.areaW * h / w * 10) / 10; syncFields(); refreshCell(); }
     dirty = true;
   }
@@ -362,7 +376,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     loadImage(file, function (img) {
       var c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
       c.getContext('2d').drawImage(img, 0, 0);
-      designSample = false; setDesign(c, true); updateTag(); note('');
+      designSample = false; resetDesignFit(); setDesign(c, false); updateTag(); note('');
     });
   }
 
@@ -429,6 +443,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     S.quad.forEach(function (p) { var x = (s * p.x + tx) * r, y = (s * p.y + ty) * r; minx = Math.min(minx, x); maxx = Math.max(maxx, x); miny = Math.min(miny, y); maxy = Math.max(maxy, y); });
     var x0 = Math.max(0, Math.floor(minx)), x1 = Math.min(w - 1, Math.ceil(maxx)), y0 = Math.max(0, Math.floor(miny)), y1 = Math.min(h - 1, Math.ceil(maxy));
     var op = S.opacity, sd = src.data, sw = src.w, sh = src.h;
+    var dbx = designBox(), iw = 1 / (dbx.wf * S.ds), ih = 1 / (dbx.hf * S.ds), ox = S.dx, oy = S.dy;
     var uc0 = S.cell.c / S.cols, uc1 = (S.cell.c + 1) / S.cols, vc0 = S.cell.r / S.rows, vc1 = (S.cell.r + 1) / S.rows, faint = S.onlyCell ? 0.16 : 1;
     for (var j = y0; j <= y1; j++) {
       var Y = ((j + 0.5) / r - ty) / s;
@@ -437,7 +452,9 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
         var wd = m[6] * X + m[7] * Y + m[8];
         var u = (m[0] * X + m[1] * Y + m[2]) / wd, v = (m[3] * X + m[4] * Y + m[5]) / wd;
         if (u < 0 || u > 1 || v < 0 || v > 1) continue;
-        var fx = u * (sw - 1), fy = v * (sh - 1), ix = fx | 0, iy = fy | 0, ax = fx - ix, ay = fy - iy;
+        var su = (u - 0.5 - ox) * iw + 0.5, sv = (v - 0.5 - oy) * ih + 0.5;
+        if (su < 0 || su > 1 || sv < 0 || sv > 1) continue;
+        var fx = su * (sw - 1), fy = sv * (sh - 1), ix = fx | 0, iy = fy | 0, ax = fx - ix, ay = fy - iy;
         var ix2 = ix + 1 < sw ? ix + 1 : ix, iy2 = iy + 1 < sh ? iy + 1 : iy;
         var i00 = (iy * sw + ix) * 4, i10 = (iy * sw + ix2) * 4, i01 = (iy2 * sw + ix) * 4, i11 = (iy2 * sw + ix2) * 4;
         var w00 = (1 - ax) * (1 - ay), w10 = ax * (1 - ay), w01 = (1 - ax) * ay, w11 = ax * ay, o = (j * w + i) * 4;
@@ -697,6 +714,26 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     $('progText').textContent = S.done.size + ' de ' + total + ' celdas terminadas';
     $('barFill').style.width = (100 * S.done.size / total) + '%';
     $('doneBtn').textContent = S.done.has(c + ',' + r) ? 'Quitar marca de hecha' : 'Marcar como hecha';
+    refreshDesign();
+  }
+  function designBox() {
+    var src = S.srcFull, wf = 1, hf = 1;
+    if (src && S.fit !== 'stretch') {
+      var asp = S.areaW / S.areaH, ia = src.w / src.h;
+      if (S.fit === 'contain') { if (ia > asp) hf = asp / ia; else wf = ia / asp; }
+      else { if (ia > asp) wf = ia / asp; else hf = asp / ia; }
+    }
+    return { wf: wf, hf: hf, w: wf * S.ds * S.areaW, h: hf * S.ds * S.areaH };
+  }
+  function refreshDesign() {
+    var b = designBox();
+    $('designInfo').textContent = 'El diseño mide ' + fmt(b.w) + ' × ' + fmt(b.h) + ' cm' + ((b.wf * S.ds > 1.001 || b.hf * S.ds > 1.001) ? '. Lo que sale del área marcada no se dibuja.' : '.');
+  }
+  function resetDesignFit() {
+    S.ds = 1; S.dx = 0; S.dy = 0;
+    $('dsize').value = 100; $('dx').value = 0; $('dy').value = 0;
+    $('dsizeOut').textContent = '100%'; $('dxOut').textContent = '0%'; $('dyOut').textContent = '0%';
+    refreshDesign();
   }
   function step(dir) {
     var n = S.cols * S.rows, idx = S.cell.r * S.cols + S.cell.c, j = (idx + dir + n) % n;
@@ -726,7 +763,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   function useSample() {
     stopLive(false); wallSample = true; designSample = true; S.locked = false; $('lock').checked = false; S.focus = false; $('focus').checked = false;
     S.areaW = 100; S.areaH = 100; S.cols = 4; S.rows = 4; S.done.clear(); S.cell = { c: 1, r: 1 };
-    syncFields(); setWall(makeSampleWall(), 1200, 900); setDesign(makeSampleDesign(), false); refreshCell(); updateTag(); note('');
+    syncFields(); setWall(makeSampleWall(), 1200, 900); resetDesignFit(); setDesign(makeSampleDesign(), false); refreshCell(); updateTag(); note('');
   }
 
   cv.addEventListener('pointerdown', function (e) {
@@ -776,6 +813,16 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     if (S.done.has(key)) S.done.delete(key); else { S.done.add(key); advance(); }
     refreshCell(); dirty = true;
   });
+  function bindDS(id, outId, apply) {
+    $(id).addEventListener('input', function (e) { var v = +e.target.value; $(outId).textContent = v + '%'; apply(v); refreshDesign(); dirty = true; });
+  }
+  bindDS('dsize', 'dsizeOut', function (v) { S.ds = v / 100; });
+  bindDS('dx', 'dxOut', function (v) { S.dx = v / 100; });
+  bindDS('dy', 'dyOut', function (v) { S.dy = v / 100; });
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="fit"]'), function (el) {
+    el.addEventListener('change', function () { if (el.checked) { S.fit = el.value; refreshDesign(); dirty = true; } });
+  });
+  $('designReset').addEventListener('click', function () { resetDesignFit(); dirty = true; });
   bindNum('areaW', 'areaW', 5, 3000, false); bindNum('areaH', 'areaH', 5, 3000, false);
   bindNum('cols', 'cols', 1, 12, true); bindNum('rows', 'rows', 1, 12, true);
 
