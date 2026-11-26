@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Trazamuro</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0a7f78">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Trazamuro">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap">
@@ -199,6 +205,12 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
           <button class="btn" id="nextBtn" type="button">Siguiente ›</button>
           <button class="btn primary" id="doneBtn" type="button">Marcar como hecha</button>
         </div>
+      </section>
+
+      <section class="step" id="installStep">
+        <h2>Instalar en el celular</h2>
+        <div class="row"><button class="btn primary" id="installBtn" type="button">Instalar como app</button></div>
+        <p class="help" id="installHelp">Crea un icono en la pantalla de inicio que abre la página como una app, sin pegar el enlace cada vez. Si el aviso de instalación no aparece, te muestro cómo hacerlo desde el menú del navegador.</p>
       </section>
     </aside>
   </main>
@@ -825,6 +837,27 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   $('designReset').addEventListener('click', function () { resetDesignFit(); dirty = true; });
   bindNum('areaW', 'areaW', 5, 3000, false); bindNum('areaH', 'areaH', 5, 3000, false);
   bindNum('cols', 'cols', 1, 12, true); bindNum('rows', 'rows', 1, 12, true);
+
+  /* ---------- instalar como app ---------- */
+  var deferredInstall = null;
+  function isStandalone() { return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true; }
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferredInstall = e; });
+  window.addEventListener('appinstalled', function () { deferredInstall = null; $('installStep').hidden = true; });
+  $('installStep').hidden = isStandalone();
+  $('installBtn').addEventListener('click', async function () {
+    var help = $('installHelp');
+    if (deferredInstall) {
+      deferredInstall.prompt();
+      try { await deferredInstall.userChoice; } catch (e) {}
+      deferredInstall = null; return;
+    }
+    if (window.self !== window.top) { help.textContent = 'Esta opción solo funciona al abrir la página desde su enlace en el navegador, no dentro de Claude.'; return; }
+    if (/iphone|ipad|ipod/i.test(navigator.userAgent)) { help.textContent = 'En iPhone: abre la página en Safari, toca el botón Compartir y elige «Añadir a pantalla de inicio».'; return; }
+    help.textContent = 'En Android: abre la página en Chrome, toca el menú ⋮ y elige «Instalar aplicación» o «Añadir a la pantalla de inicio». Si la abriste desde otra app, ábrela primero en Chrome.';
+  });
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && window.self === window.top) {
+    window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+  }
 
   if (window.ResizeObserver) new ResizeObserver(function () { resize(); }).observe(stage);
   window.addEventListener('resize', resize);
