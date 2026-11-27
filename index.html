@@ -129,7 +129,17 @@ canvas#cv { display: block; touch-action: none; cursor: crosshair; }
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; border-radius: 0; border-width: 1px 0 0;
     padding: 6px max(8px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
   }
-  body { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+  body { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); padding-top: 10px; }
+  header.top { margin-bottom: 8px; }
+  header.top .sub { display: none; }
+}
+@media (orientation: landscape) and (max-height: 600px) {
+  header.top { display: none; }
+  body { padding-block: 8px; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; }
+  .stage-col { position: sticky; top: 0; padding-bottom: 0; background: none; }
+  .panel { margin-top: 0; max-height: calc(100vh - 16px); overflow-y: auto; }
+  .tabs { position: sticky; top: 0; left: auto; right: auto; bottom: auto; border-radius: 12px; border-width: 1px; padding: 4px; }
 }
 html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}[hidden]{display:none!important}
 </style>
@@ -454,7 +464,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     if (S.live) { stopLive(true); note('Imagen congelada. Puedes seguir ajustando las esquinas.'); return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { note('Este navegador no da acceso a la cámara. Usa «Tomar foto» o «Elegir de la galería».'); return; }
     try {
-      var st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+      var st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: window.innerHeight > window.innerWidth ? 1080 : 1920 }, height: { ideal: window.innerHeight > window.innerWidth ? 1920 : 1080 } }, audio: false });
       vid.srcObject = st; await vid.play();
       if (!vid.videoWidth) await new Promise(function (res) { vid.onloadedmetadata = res; });
       S.stream = st; S.live = true; wallSample = false; S.focus = false; $('focus').checked = false;
@@ -471,11 +481,14 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
 
   /* ---------- dibujo ---------- */
   function resize() {
-    var W = stage.clientWidth; if (!W) return;
+    var avail = stage.parentNode.clientWidth - 2; if (avail < 50) return;
     var d = Math.min(window.devicePixelRatio || 1, 2.5);
-    var maxH = window.innerWidth <= 860 ? Math.round(window.innerHeight * 0.4) : Math.max(260, Math.round(window.innerHeight * 0.7));
+    var land = window.innerWidth > window.innerHeight && window.innerHeight <= 600;
+    var maxH = land ? window.innerHeight - 80 : (window.innerWidth <= 860 ? Math.round(window.innerHeight * 0.58) : Math.max(260, Math.round(window.innerHeight * 0.7)));
     var asp = S.bg ? S.bgW / S.bgH : 4 / 3;
-    var nh = Math.max(240, Math.min(Math.round(W / asp), maxH));
+    var nh = Math.max(160, Math.min(Math.round(avail / asp), maxH));
+    var W = Math.min(avail, Math.round(nh * asp));
+    stage.style.width = (W + 2) + 'px'; stage.style.alignSelf = 'center';
     if (W === cw && nh === ch && d === dpr) return;
     cw = W; ch = nh; dpr = d;
     cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr); cv.style.width = cw + 'px'; cv.style.height = ch + 'px';
@@ -1146,7 +1159,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
   }
 
-  if (window.ResizeObserver) new ResizeObserver(function () { resize(); }).observe(stage);
+  if (window.ResizeObserver) new ResizeObserver(function () { resize(); }).observe(stage.parentNode);
   window.addEventListener('resize', resize);
   if (window.matchMedia) { var mq = window.matchMedia('(prefers-color-scheme: dark)'); if (mq.addEventListener) mq.addEventListener('change', function () { dirty = true; }); }
 
