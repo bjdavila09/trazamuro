@@ -286,6 +286,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
         <label class="check"><input id="focus" type="checkbox">Acercar a la celda activa</label>
         <label class="check"><input id="grid" type="checkbox" checked>Mostrar cuadrícula</label>
         <label class="check"><input id="cover" type="checkbox" checked>Llenar el ancho (recorta un poco los bordes)</label>
+        <label class="check"><input id="keepAwake" type="checkbox" checked>Mantener la pantalla encendida</label>
       </section>
 
       <section class="step" data-tab="celda">
@@ -1405,10 +1406,20 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   function isStandalone() { return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true; }
   window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferredInstall = e; });
   window.addEventListener('appinstalled', function () { deferredInstall = null; $('tabInstall').hidden = true; setTab('pared'); });
-  var savedTab = 'pared';
-  try { savedTab = localStorage.getItem('trazamuro-tab') || 'pared'; } catch (e) {}
-  if (isStandalone()) { $('tabInstall').hidden = true; if (savedTab === 'instalar') savedTab = 'pared'; }
-  setTab(savedTab);
+  if (isStandalone()) $('tabInstall').hidden = true;
+  setTab('pared'); /* siempre se abre en Pared, con «Cámara en vivo» como primera opción */
+
+  /* pantalla encendida: mientras dibujas no tocas el celular y la pantalla se apagaba */
+  var wl = null;
+  function wakeOn() {
+    if (wl || !('wakeLock' in navigator) || !$('keepAwake').checked || document.visibilityState !== 'visible') return;
+    try { navigator.wakeLock.request('screen').then(function (l) { wl = l; l.addEventListener('release', function () { wl = null; }); }).catch(function () {}); } catch (e) {}
+  }
+  function wakeOff() { if (wl) { try { wl.release(); } catch (e) {} wl = null; } }
+  $('keepAwake').addEventListener('change', function () { if (this.checked) wakeOn(); else wakeOff(); });
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') wakeOn(); });
+  document.addEventListener('pointerdown', wakeOn);
+  wakeOn();
   $('tabs').addEventListener('click', function (e) { var b = e.target.closest ? e.target.closest('.tab') : null; if (b) setTab(b.dataset.tab); });
   $('installBtn').addEventListener('click', async function () {
     var help = $('installHelp');
