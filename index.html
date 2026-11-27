@@ -120,6 +120,12 @@ canvas#cv { display: block; touch-action: none; cursor: crosshair; }
 .tab[aria-selected="true"] { color: var(--accent-fg); background: var(--accent); }
 .tab:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .cellbar { display: flex; align-items: center; gap: 8px; }
+.quickbar { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.quickbar label { font-size: 13px; color: var(--muted); }
+.quickbar input { flex: 1; min-width: 0; accent-color: var(--accent); }
+.quickbar input:disabled { opacity: .5; }
+.quickbar output { font: 500 13px var(--font-mono); width: 40px; text-align: right; }
+.quickbar .btn { padding: 8px 12px; white-space: nowrap; }
 .cellbar .btn { min-width: 44px; padding: 8px 12px; }
 .cellbar-name { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
 .cellbar-name b { font: 700 20px/1 var(--font-display); }
@@ -162,6 +168,12 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
         <div class="cellbar-name"><b id="cellNameBar">B2</b><span id="cellSubBar"></span></div>
         <button class="btn" id="nextBar" type="button" aria-label="Celda siguiente">›</button>
         <button class="btn primary" id="doneBar" type="button">Hecha</button>
+      </div>
+      <div class="quickbar">
+        <label for="opacity">Opacidad</label>
+        <input id="opacity" type="range" min="5" max="100" value="65">
+        <output id="opacityOut" for="opacity">65%</output>
+        <button class="btn" id="pulseBtn" type="button" aria-pressed="false">Pulso: Off</button>
       </div>
       <p id="note" class="note" role="status" hidden></p>
     </section>
@@ -242,7 +254,11 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
 
       <section class="step" data-tab="dibujar">
         <h2>Dibujar</h2>
-        <div class="slider"><label for="opacity">Opacidad</label><input id="opacity" type="range" min="5" max="100" value="65"><output id="opacityOut" for="opacity">65%</output></div>
+        <div class="fields">
+          <label class="field"><span>Pulso: opacidad mínima (%)</span><input id="pulseMin" type="number" inputmode="numeric" min="0" max="95" step="5" value="15"></label>
+          <label class="field"><span>Pulso: período (segundos)</span><input id="pulsePeriod" type="number" inputmode="decimal" min="0.5" max="60" step="0.5" value="3"></label>
+        </div>
+        <p class="help">El botón «Pulso», junto a la opacidad bajo la imagen, sube y baja la opacidad de forma continua: del mínimo al 100% y de vuelta al mínimo en cada período. Así ves la pared y el dibujo alternadamente.</p>
         <div class="seg" role="radiogroup" aria-label="Modo de imagen">
           <label class="opt"><input class="sr" type="radio" name="mode" id="modeFull" value="full" checked><span>Imagen completa</span></label>
           <label class="opt"><input class="sr" type="radio" name="mode" id="modeEdges" value="edges"><span>Solo líneas</span></label>
@@ -487,7 +503,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     var avail = stage.parentNode.clientWidth - 2; if (avail < 50) return;
     var d = Math.min(window.devicePixelRatio || 1, 2.5);
     var land = window.innerWidth > window.innerHeight && window.innerHeight <= 600;
-    var maxH = land ? window.innerHeight - 80 : (window.innerWidth <= 860 ? Math.round(window.innerHeight * 0.58) : Math.max(260, Math.round(window.innerHeight * 0.7)));
+    var maxH = land ? window.innerHeight - 80 : (window.innerWidth <= 860 ? Math.round(window.innerHeight * 0.54) : Math.max(260, Math.round(window.innerHeight * 0.7)));
     var asp = S.bg ? S.bgW / S.bgH : 4 / 3;
     var fill = $('cover').checked, nh, W;
     if (fill) { nh = Math.max(160, Math.min(Math.round(avail / asp * 1.25), maxH)); W = avail; }
@@ -519,7 +535,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     var minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
     S.quad.forEach(function (p) { var x = (s * p.x + tx) * r, y = (s * p.y + ty) * r; minx = Math.min(minx, x); maxx = Math.max(maxx, x); miny = Math.min(miny, y); maxy = Math.max(maxy, y); });
     var x0 = Math.max(0, Math.floor(minx)), x1 = Math.min(w - 1, Math.ceil(maxx)), y0 = Math.max(0, Math.floor(miny)), y1 = Math.min(h - 1, Math.ceil(maxy));
-    var op = S.opacity, sd = src.data, sw = src.w, sh = src.h;
+    var op = effOpacity(), sd = src.data, sw = src.w, sh = src.h;
     var dbx = designBox(), iw = 1 / (dbx.wf * S.ds), ih = 1 / (dbx.hf * S.ds), ox = S.dx, oy = S.dy;
     var uc0 = S.cell.c / S.cols, uc1 = (S.cell.c + 1) / S.cols, vc0 = S.cell.r / S.rows, vc1 = (S.cell.r + 1) / S.rows, faint = S.onlyCell ? 0.16 : 1;
     for (var j = y0; j <= y1; j++) {
@@ -606,8 +622,25 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
       note('La cámara cambió de orientación. Vuelve a detectar las marcas.');
     }
     if (S.live && S.track && (++fcount % 2 === 0)) runTrack();
+    if (S.pulse) { dirty = true; $('opacityOut').textContent = Math.round(effOpacity() * 100) + '%'; }
     if (S.live || dirty) { dirty = false; render(); }
     requestAnimationFrame(tick);
+  }
+  /* pulso: la opacidad sube y baja entre el mínimo y 100% en cada período */
+  function effOpacity() {
+    if (!S.pulse) return S.opacity;
+    var mn = Math.max(0, Math.min(95, parseFloat($('pulseMin').value) || 0)) / 100;
+    var per = Math.max(0.5, Math.min(60, parseFloat($('pulsePeriod').value) || 3));
+    var ph = ((performance.now() - S.pulseT0) / (per * 1000)) % 1;
+    return mn + (1 - mn) * (0.5 - 0.5 * Math.cos(ph * 2 * Math.PI));
+  }
+  function setPulse(on) {
+    S.pulse = on; S.pulseT0 = performance.now();
+    $('pulseBtn').textContent = on ? 'Pulso: On' : 'Pulso: Off';
+    $('pulseBtn').classList.toggle('primary', on); $('pulseBtn').setAttribute('aria-pressed', on ? 'true' : 'false');
+    $('opacity').disabled = on;
+    if (!on) $('opacityOut').textContent = Math.round(S.opacity * 100) + '%';
+    dirty = true;
   }
 
   /* ---------- seguimiento de marcas ---------- */
@@ -1116,6 +1149,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   $('trackBtn').addEventListener('click', function () { if (S.track) stopTrack(); else startTrack(); });
   $('detectBtn').addEventListener('click', function () { detectMarks(''); });
   $('gridBtn').addEventListener('click', startGrid);
+  $('pulseBtn').addEventListener('click', function () { setPulse(!S.pulse); });
   $('lock').addEventListener('change', function (e) { S.locked = e.target.checked; dirty = true; });
   $('focus').addEventListener('change', function (e) { S.focus = e.target.checked; dirty = true; });
   $('onlyCell').addEventListener('change', function (e) { S.onlyCell = e.target.checked; dirty = true; });
