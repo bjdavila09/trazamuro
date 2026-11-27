@@ -183,7 +183,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
           <label class="btn"><input class="sr" id="wallCam" type="file" accept="image/*" capture="environment">Tomar foto</label>
           <label class="btn"><input class="sr" id="wallFile" type="file" accept="image/*">Elegir de la galería</label>
         </div>
-        <p class="help">La cámara en vivo muestra la pared en tiempo real y sigue las marcas si mueves el celular; solo funciona al abrir la página en un navegador. «Tomar foto» abre la cámara del celular y «Elegir de la galería» usa una foto que ya tengas. Pega las marcas antes de empezar.</p>
+        <p class="help">La cámara en vivo muestra la pared en tiempo real y sigue las marcas si mueves el celular; solo funciona al abrir la página en un navegador. «Tomar foto» abre la cámara del celular y «Elegir de la galería» usa una foto que ya tengas. Aquí va la foto de la pared; el dibujo que quieres pintar se carga en la pestaña «Diseño». Pega las marcas antes de empezar.</p>
       </section>
 
       <section class="step" data-tab="diseno">
@@ -440,7 +440,8 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
       var c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
       wallSample = false; S.focus = false; $('focus').checked = false; S.locked = false; $('lock').checked = false;
-      setWall(c, c.width, c.height); updateTag(); note('');
+      setWall(c, c.width, c.height); updateTag();
+      note(designSample ? 'Esta foto es el fondo (la pared). El dibujo que se superpone sigue siendo el de ejemplo: cárgalo en la pestaña «Diseño».' : '');
     });
   }
   function loadDesignFile(file) {
