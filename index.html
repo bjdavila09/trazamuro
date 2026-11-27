@@ -622,7 +622,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
       note('La cámara cambió de orientación. Vuelve a detectar las marcas.');
     }
     if (S.live && S.track && (++fcount % 2 === 0)) runTrack();
-    if (S.pulse) { dirty = true; $('opacityOut').textContent = Math.round(effOpacity() * 100) + '%'; }
+    if (S.pulse) dirty = true;
     if (S.live || dirty) { dirty = false; render(); }
     requestAnimationFrame(tick);
   }
@@ -639,7 +639,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     $('pulseBtn').textContent = on ? 'Pulso: On' : 'Pulso: Off';
     $('pulseBtn').classList.toggle('primary', on); $('pulseBtn').setAttribute('aria-pressed', on ? 'true' : 'false');
     $('opacity').disabled = on;
-    if (!on) $('opacityOut').textContent = Math.round(S.opacity * 100) + '%';
+    $('opacityOut').textContent = on ? '' : Math.round(S.opacity * 100) + '%';
     dirty = true;
   }
 
