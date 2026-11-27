@@ -120,6 +120,9 @@ canvas#cv { display: block; touch-action: none; cursor: crosshair; }
 .tab[aria-selected="true"] { color: var(--accent-fg); background: var(--accent); }
 .tab:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .cellbar { display: flex; align-items: center; gap: 8px; }
+details.step > summary { cursor: pointer; font-weight: 600; min-height: 36px; display: flex; align-items: center; }
+.adv { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.adv h3 { font-size: 14px; margin: 6px 0 0; }
 .quickbar { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
 .quickbar label { font-size: 13px; color: var(--muted); }
 .quickbar input { flex: 1; min-width: 0; accent-color: var(--accent); }
@@ -228,7 +231,22 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
       </section>
 
       <section class="step" data-tab="area">
-        <h2>Esquinas</h2>
+        <h2>Patrón de referencia</h2>
+        <p class="help">Pega cerca del área, fuera de donde vas a pintar, una hoja con un garabato o un dibujo con mucho detalle. Debe quedar fija y a la vista de la cámara. No hace falta pegar nada dentro del área.</p>
+        <p class="help">1. Con la cámara en vivo, arrastra los puntos 1 a 4 hasta las esquinas del área: arriba izquierda, arriba derecha, abajo derecha y abajo izquierda.<br>2. Toca «Fijar patrón». Desde ahí el dibujo se mantiene sobre la pared aunque muevas un poco el celular.</p>
+        <label class="check"><input id="patPts" type="checkbox" checked>Mostrar los puntos que se siguen</label>
+        <div class="row">
+          <button class="btn primary" id="patBtn" type="button">Fijar patrón</button>
+          <button class="btn" id="resetQuad2" type="button">Restablecer esquinas</button>
+        </div>
+        <p class="help" id="patStatus" role="status">Ajusta las 4 esquinas sobre el área, deja a la vista el patrón y toca «Fijar patrón» con la cámara en vivo.</p>
+        <p class="help">Para mover las esquinas después de fijar el patrón, toca «Detener patrón», ajústalas y vuelve a fijarlo.</p>
+      </section>
+
+      <details class="step" data-tab="area">
+        <summary>Avanzado: marcas negras y cuadrícula de marcas</summary>
+        <div class="adv">
+        <h3>Esquinas con marcas</h3>
         <label class="check"><input id="lock" type="checkbox">Fijar esquinas</label>
         <label class="check"><input id="lightMarks" type="checkbox">Marcas claras sobre fondo oscuro</label>
         <div class="row">
@@ -238,10 +256,10 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
         </div>
         <p class="help" id="trackStatus" role="status">Pega 4 cuadros de cinta negra mate en las esquinas y toca «Detectar marcas negras». Con la cámara en vivo, «Activar seguimiento» las sigue si mueves un poco el celular.</p>
         <p class="help">También puedes arrastrar los puntos 1 a 4 hasta las marcas, en este orden: arriba izquierda, arriba derecha, abajo derecha, abajo izquierda. Toca una celda para activarla. Sin seguimiento, deja el celular fijo en un soporte.</p>
-      </section>
+        </div>
 
-      <section class="step" data-tab="area">
-        <h2>Cuadrícula de marcas</h2>
+        <div class="adv">
+        <h3>Cuadrícula de marcas</h3>
         <p class="help">Para dibujar de cerca. Pega las marcas en filas y columnas parejas: las de los bordes son las esquinas del área y las demás quedan a la misma distancia entre sí. En pantalla se numeran por filas, desde arriba a la izquierda.</p>
         <div class="fields">
           <label class="field"><span>Marcas por fila</span><input id="gcols" type="number" inputmode="numeric" min="2" max="8" step="1" value="3"></label>
@@ -250,7 +268,8 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
         <label class="check"><input id="autoCell" type="checkbox" checked>Elegir la celda a la que apunta la cámara</label>
         <div class="row"><button class="btn primary" id="gridBtn" type="button">Reconocer cuadrícula</button></div>
         <p class="help" id="gridStatus" role="status">Aleja el celular hasta ver todas las marcas completas y toca «Reconocer cuadrícula». Con la cámara en vivo se sigue sola mientras veas al menos 4 marcas.</p>
-      </section>
+        </div>
+      </details>
 
       <section class="step" data-tab="dibujar">
         <h2>Dibujar</h2>
@@ -583,6 +602,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   function drawHandles() {
     if ((S.locked && !S.track) || S.focus) return;
     if (S.track && S.track.grid) { drawGridMarks(S.track); return; }
+    if (S.track && S.track.pat) { drawPatPts(S.track); return; }
     S.quad.forEach(function (p, i) {
       var s = toScr(p);
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.beginPath(); ctx.arc(s.x, s.y, 12, 0, 7); ctx.stroke();
@@ -732,7 +752,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   }
   function stopTrack() {
     if (!S.track) return;
-    S.track = null; S.trackState = []; $('trackBtn').textContent = 'Activar seguimiento'; $('gridBtn').textContent = 'Reconocer cuadrícula'; setTrackStatus(''); gsay(''); dirty = true;
+    S.track = null; S.trackState = []; $('trackBtn').textContent = 'Activar seguimiento'; $('gridBtn').textContent = 'Reconocer cuadrícula'; $('patBtn').textContent = 'Fijar patrón'; setTrackStatus(''); gsay(''); psay(''); dirty = true;
   }
   function findMarks(auto) {
     var f = grabGray(), k = f.w / S.bgW, blobs = findBlobs(f.g, f.w, f.h, f.thr, 20, f.w * f.h * 0.03);
@@ -991,8 +1011,173 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
       ctx.fillStyle = '#fff'; ctx.fillText(String(nd.id), s.x + 15, s.y - 12);
     });
   }
+  /* ---------- seguimiento por patrón: sigue los detalles de la escena que están fuera del área ---------- */
+  var DEFAULT_PAT = 'Ajusta las 4 esquinas sobre el área, deja a la vista el patrón y toca «Fijar patrón» con la cámara en vivo.';
+  function psay(t) { $('patStatus').textContent = t || DEFAULT_PAT; if (t) note(''); }
+  function boxBlur(src, w, h, r) {
+    var tmp = new Float32Array(w * h), out = new Float32Array(w * h), x, y, s, k;
+    for (y = 0; y < h; y++) {
+      for (x = 0; x < w; x++) { s = 0; for (k = -r; k <= r; k++) { var xx = x + k; if (xx >= 0 && xx < w) s += src[y * w + xx]; } tmp[y * w + x] = s; }
+    }
+    for (x = 0; x < w; x++) {
+      for (y = 0; y < h; y++) { s = 0; for (k = -r; k <= r; k++) { var yy = y + k; if (yy >= 0 && yy < h) s += tmp[yy * w + x]; } out[y * w + x] = s; }
+    }
+    return out;
+  }
+  function bil(g, w, h, x, y) {
+    var xi = x | 0, yi = y | 0; if (x < 0 || y < 0 || xi >= w - 1 || yi >= h - 1) return -1;
+    var fx = x - xi, fy = y - yi, i = yi * w + xi;
+    return g[i] * (1 - fx) * (1 - fy) + g[i + 1] * fx * (1 - fy) + g[i + w] * (1 - fx) * fy + g[i + w + 1] * fx * fy;
+  }
+  var PR = 4; /* radio del parche: 9 × 9 */
+  /* puntos con mucho detalle (esquinas, tipo Shi-Tomasi) fuera del área */
+  function patCorners(g, w, h, quad, maxN) {
+    var n = w * h, Ix = new Float32Array(n), Iy = new Float32Array(n), i, x, y;
+    for (y = 1; y < h - 1; y++) for (x = 1; x < w - 1; x++) { i = y * w + x; Ix[i] = (g[i + 1] - g[i - 1]) * 0.5; Iy[i] = (g[i + w] - g[i - w]) * 0.5; }
+    var xx = new Float32Array(n), xy = new Float32Array(n), yy = new Float32Array(n);
+    for (i = 0; i < n; i++) { xx[i] = Ix[i] * Ix[i]; xy[i] = Ix[i] * Iy[i]; yy[i] = Iy[i] * Iy[i]; }
+    xx = boxBlur(xx, w, h, 2); xy = boxBlur(xy, w, h, 2); yy = boxBlur(yy, w, h, 2);
+    var cx = 0, cy = 0; quad.forEach(function (p) { cx += p.x / 4; cy += p.y / 4; });
+    var ex = quad.map(function (p) { return { x: cx + (p.x - cx) * 1.25, y: cy + (p.y - cy) * 1.25 }; });
+    function inside(px, py) {
+      var sg = 0;
+      for (var a = 0; a < 4; a++) {
+        var p = ex[a], q = ex[(a + 1) % 4], c = (q.x - p.x) * (py - p.y) - (q.y - p.y) * (px - p.x);
+        if (c !== 0) { var s = c > 0 ? 1 : -1; if (sg === 0) sg = s; else if (s !== sg) return false; }
+      }
+      return true;
+    }
+    var M = PR + 8, CELL = 8, best = {}, mx = 0;
+    for (y = M; y < h - M; y++) for (x = M; x < w - M; x++) {
+      i = y * w + x; var a = xx[i], b = xy[i], c = yy[i];
+      var resp = (a + c) / 2 - Math.sqrt(((a - c) / 2) * ((a - c) / 2) + b * b);
+      if (resp <= 0) continue;
+      if (inside(x, y)) continue;
+      var key = ((y / CELL) | 0) * 1000 + ((x / CELL) | 0), cur = best[key];
+      if (!cur || resp > cur.r) best[key] = { x: x, y: y, r: resp };
+      if (resp > mx) mx = resp;
+    }
+    var list = [];
+    for (var kk in best) if (best[kk].r > mx * 0.04) list.push(best[kk]);
+    list.sort(function (p, q) { return q.r - p.r; });
+    var out = [];
+    for (i = 0; i < list.length && out.length < maxN; i++) {
+      var p = list[i], t = new Float32Array((2 * PR + 1) * (2 * PR + 1)), j = 0, mean = 0, dx, dy, nrm = 0;
+      for (dy = -PR; dy <= PR; dy++) for (dx = -PR; dx <= PR; dx++) { t[j] = g[(p.y + dy) * w + p.x + dx]; mean += t[j]; j++; }
+      mean /= t.length;
+      for (j = 0; j < t.length; j++) { t[j] -= mean; nrm += t[j] * t[j]; }
+      nrm = Math.sqrt(nrm); if (nrm < 20) continue;
+      for (j = 0; j < t.length; j++) t[j] /= nrm;
+      out.push({ x: p.x, y: p.y, u: p.x / w, v: p.y / w, t: t });
+    }
+    return out;
+  }
+  /* busca el punto en la imagen actual alrededor de donde lo predice la homografía M */
+  function matchKp(kp, M, g, w, h, Sr, st) {
+    var p0 = proj(M, kp.u, kp.v), e = 1 / w, pa = proj(M, kp.u + e, kp.v), pb = proj(M, kp.u, kp.v + e);
+    var a = pa.x - p0.x, c = pa.y - p0.y, b = pb.x - p0.x, d = pb.y - p0.y;
+    if (!isFinite(p0.x) || !isFinite(p0.y) || p0.x < PR + 2 || p0.y < PR + 2 || p0.x > w - PR - 3 || p0.y > h - PR - 3) return null;
+    var T = kp.t, nT = T.length, bs = -2, bx = 0, by = 0;
+    function score(cx, cy) {
+      var s1 = 0, s2 = 0, s12 = 0, j = 0, dx, dy;
+      for (dy = -PR; dy <= PR; dy++) for (dx = -PR; dx <= PR; dx++) {
+        var v = bil(g, w, h, cx + a * dx + b * dy, cy + c * dx + d * dy); if (v < 0) return -2;
+        s1 += v; s2 += v * v; s12 += v * T[j]; j++;
+      }
+      var vr = s2 - s1 * s1 / nT; if (vr < 25) return -2;
+      return s12 / Math.sqrt(vr);
+    }
+    var ox, oy, sc;
+    for (oy = -Sr; oy <= Sr; oy += st) for (ox = -Sr; ox <= Sr; ox += st) { sc = score(p0.x + ox, p0.y + oy); if (sc > bs) { bs = sc; bx = ox; by = oy; } }
+    if (st > 1) {
+      var cx0 = bx, cy0 = by;
+      for (oy = -1; oy <= 1; oy++) for (ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; sc = score(p0.x + cx0 + ox, p0.y + cy0 + oy); if (sc > bs) { bs = sc; bx = cx0 + ox; by = cy0 + oy; } }
+    }
+    return bs > -2 ? { x: p0.x + bx, y: p0.y + by, s: bs } : null;
+  }
+  function homResid(M, u, v, x, y) { var p = proj(M, u, v); return Math.hypot(p.x - x, p.y - y); }
+  function ransacH(U, P, thr, iters) {
+    var n = U.length, bestIn = [], i, it, k, j;
+    for (it = 0; it < iters; it++) {
+      var ids = [];
+      while (ids.length < 4) { k = (Math.random() * n) | 0; if (ids.indexOf(k) < 0) ids.push(k); }
+      var Mc = fitH(ids.map(function (q) { return U[q]; }), ids.map(function (q) { return P[q]; }));
+      if (!Mc) continue;
+      var inl = [];
+      for (j = 0; j < n; j++) if (homResid(Mc, U[j].u, U[j].v, P[j].x, P[j].y) < thr) inl.push(j);
+      if (inl.length > bestIn.length) bestIn = inl;
+    }
+    return bestIn;
+  }
+  function patCornersOK(T, M) {
+    var out = [], lim = 30 * Math.max(S.bgW, S.bgH);
+    for (var i = 0; i < 4; i++) {
+      var q = T.q0[i];
+      if (!(M[6] * q.u + M[7] * q.v + 1 > 0.02)) return null;
+      var p = proj(M, q.u, q.v), x = p.x / T.k, y = p.y / T.k;
+      if (!isFinite(x) || !isFinite(y) || Math.abs(x) > lim || Math.abs(y) > lim) return null;
+      out.push({ x: x, y: y });
+    }
+    return out;
+  }
+  function startPat() {
+    if (S.track && S.track.pat) { stopTrack(); return; }
+    if (!S.live || S.bg !== vid || vid.readyState < 2) { psay('El patrón solo funciona con la cámara en vivo: ve a Pared y toca «Cámara en vivo».'); return; }
+    var f = grabGray(), k = f.w / S.bgW, q = S.quad.map(function (p) { return { x: p.x * k, y: p.y * k }; });
+    var kps = patCorners(f.g, f.w, f.h, q, 110);
+    if (kps.length < 25) { psay('Veo muy poco detalle fuera del área (' + kps.length + ' puntos). Pega cerca una hoja con un garabato o un dibujo con mucho detalle, que se vea en la cámara, y vuelve a intentarlo.'); return; }
+    stopTrack();
+    var W0 = f.w;
+    S.track = { pat: true, k: k, W0: W0, kps: kps, q0: q.map(function (p) { return { u: p.x / W0, v: p.y / W0 }; }), M: [W0, 0, 0, 0, W0, 0, 0, 0], lost: 0, inl: [], pts: [], shown: null };
+    $('patBtn').textContent = 'Detener patrón';
+    psay('Patrón fijado con ' + kps.length + ' puntos. Ya puedes mover un poco el celular: el dibujo sigue a la pared.');
+    dirty = true;
+  }
+  function runPat(T) {
+    var f = grabGray(), w = f.w, h = f.h, g = f.g, wide = T.lost > 0, i;
+    var U = [], P = [], ids = [];
+    for (i = 0; i < T.kps.length; i++) {
+      var m = matchKp(T.kps[i], T.M, g, w, h, wide ? 12 : 6, wide ? 3 : 2);
+      if (m && m.s > 0.75) { U.push(T.kps[i]); P.push(m); ids.push(i); }
+    }
+    var inl = [], Mn = null;
+    if (U.length >= 8) {
+      for (i = 0; i < U.length; i++) if (homResid(T.M, U[i].u, U[i].v, P[i].x, P[i].y) < 4) inl.push(i);
+      if (inl.length < Math.max(8, U.length * 0.5)) inl = ransacH(U, P, 2.5, 80);
+      for (var pass = 0; pass < 2 && inl.length >= 8; pass++) {
+        Mn = fitH(inl.map(function (q) { return U[q]; }), inl.map(function (q) { return P[q]; }));
+        if (!Mn) break;
+        var nin = [];
+        for (i = 0; i < U.length; i++) if (homResid(Mn, U[i].u, U[i].v, P[i].x, P[i].y) < 2.5) nin.push(i);
+        if (nin.length < 8) { Mn = null; break; }
+        inl = nin;
+      }
+    }
+    var cs = Mn && inl.length >= 8 ? patCornersOK(T, Mn) : null;
+    if (cs) {
+      for (i = 0; i < 4; i++) { var q = S.quad[i]; S.quad[i] = { x: q.x + (cs[i].x - q.x) * 0.7, y: q.y + (cs[i].y - q.y) * 0.7 }; }
+      T.M = Mn; T.lost = 0; T.inl = inl.map(function (q) { return ids[q]; });
+      T.pts = T.inl.map(function (id) { var p = proj(Mn, T.kps[id].u, T.kps[id].v); return { x: p.x / T.k, y: p.y / T.k }; });
+    } else { T.lost++; T.pts = []; }
+    var key = T.lost >= 10 ? 'lost' : (T.lost === 0 ? 'ok' + Math.floor(T.inl.length / 10) : T.shown);
+    if (key !== T.shown) {
+      T.shown = key;
+      if (key === 'lost') psay('Perdí el patrón. Apunta de forma que se vea la escena como cuando lo fijaste y se recupera sola, o toca «Detener patrón» y vuelve a fijarlo.');
+      else psay('Siguiendo el patrón (' + T.inl.length + ' puntos).');
+    }
+    dirty = true;
+  }
+  function drawPatPts(T) {
+    if (!$('patPts').checked) return;
+    ctx.fillStyle = 'rgba(55,224,122,.85)'; ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 1;
+    T.pts.forEach(function (p) {
+      var s = toScr(p); if (s.x < 0 || s.y < 0 || s.x > cw || s.y > ch) return;
+      ctx.beginPath(); ctx.arc(s.x, s.y, 2.6, 0, 7); ctx.fill(); ctx.stroke();
+    });
+  }
   function runTrack() {
     var T = S.track; if (!T || vid.readyState < 2) return;
+    if (T.pat) { runPat(T); return; }
     if (T.grid) { runGrid(T); return; }
     var f = grabGray(), k = f.w / S.bgW, blobs = findBlobs(f.g, f.w, f.h, f.thr, 8, f.w * f.h * 0.08);
     var R = f.w * 0.2, cands = [], i;
@@ -1118,7 +1303,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
 
   cv.addEventListener('pointerdown', function (e) {
     var rect = cv.getBoundingClientRect(), x = e.clientX - rect.left, y = e.clientY - rect.top;
-    if (S.bg && !S.locked && !S.focus && !(S.track && S.track.grid)) {
+    if (S.bg && !S.locked && !S.focus && !(S.track && (S.track.grid || S.track.pat))) {
       var best = -1, bd = 36;
       S.quad.forEach(function (p, i) { var sp = toScr(p), d = Math.hypot(sp.x - x, sp.y - y); if (d < bd) { bd = d; best = i; } });
       if (best >= 0) {
@@ -1150,6 +1335,10 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   $('detectBtn').addEventListener('click', function () { detectMarks(''); });
   $('gridBtn').addEventListener('click', startGrid);
   $('pulseBtn').addEventListener('click', function () { setPulse(!S.pulse); });
+  $('patBtn').addEventListener('click', startPat);
+  $('resetQuad2').addEventListener('click', function () { stopTrack(); resetQuad(); dirty = true; });
+  $('patPts').addEventListener('change', function () { dirty = true; });
+  window.__trz = { quad: function () { return S.quad.map(function (p) { return { x: p.x, y: p.y }; }); }, lost: function () { return S.track ? S.track.lost : -1; }, size: function () { return [S.bgW, S.bgH]; }, bench: function () { var T = S.track; if (!T || !T.pat) return -1; var t = performance.now(); for (var i = 0; i < 20; i++) runPat(T); return (performance.now() - t) / 20; }, setQuad: function (q) { S.quad = q.map(function (p) { return { x: p.x, y: p.y }; }); dirty = true; } };
   $('lock').addEventListener('change', function (e) { S.locked = e.target.checked; dirty = true; });
   $('focus').addEventListener('change', function (e) { S.focus = e.target.checked; dirty = true; });
   $('onlyCell').addEventListener('change', function (e) { S.onlyCell = e.target.checked; dirty = true; });
