@@ -198,7 +198,14 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
           <label class="btn"><input class="sr" id="wallCam" type="file" accept="image/*" capture="environment">Tomar foto</label>
           <label class="btn"><input class="sr" id="wallFile" type="file" accept="image/*">Elegir de la galería</label>
         </div>
-        <p class="help">La cámara en vivo muestra la pared en tiempo real y sigue las marcas si mueves el celular; solo funciona al abrir la página en un navegador. «Tomar foto» abre la cámara del celular y «Elegir de la galería» usa una foto que ya tengas. Aquí va la foto de la pared; el dibujo que quieres pintar se carga en la pestaña «Diseño». Pega las marcas antes de empezar.</p>
+        <p class="help">La cámara en vivo muestra la pared en tiempo real y sigue las marcas si mueves el celular; solo funciona al abrir la página en un navegador. «Tomar foto» abre la cámara del celular y «Elegir de la galería» usa una foto que ya tengas. Aquí va la foto de la pared; el dibujo que quieres pintar se carga en la pestaña «Diseño». Prepara el patrón de referencia (pestaña Área) antes de empezar.</p>
+        <h3 style="font-size:14px;margin:10px 0 0">Orientación de la pantalla</h3>
+        <div class="seg three" role="radiogroup" aria-label="Orientación de la pantalla">
+          <label class="opt"><input class="sr" type="radio" name="orient" value="auto" checked><span>Automática</span></label>
+          <label class="opt"><input class="sr" type="radio" name="orient" value="portrait"><span>Vertical</span></label>
+          <label class="opt"><input class="sr" type="radio" name="orient" value="landscape"><span>Horizontal</span></label>
+        </div>
+        <p class="help" id="orientNote">Con el celular plano sobre el cuaderno, la pantalla no sabe cuál es arriba y no gira sola. Aquí eliges tú la orientación.</p>
       </section>
 
       <section class="step" data-tab="diseno">
@@ -217,7 +224,11 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
         <div class="slider"><label for="dy">Mover ↕</label><input id="dy" type="range" min="-100" max="100" value="0"><output id="dyOut" for="dy">0%</output></div>
         <p class="help" id="designInfo"></p>
         <p class="help">Ajustar: entra completo sin deformarse. Llenar: cubre toda el área y recorta lo que sobre. Estirar: se deforma para ocupar toda el área. El área es el rectángulo que marcaste con las 4 esquinas.</p>
-        <div class="row" style="margin-top:8px"><button class="btn" id="designReset" type="button">Restablecer tamaño</button></div>
+        <div class="row" style="margin-top:8px">
+          <button class="btn" id="designRotate" type="button">Girar 90°</button>
+          <button class="btn" id="designReset" type="button">Restablecer tamaño</button>
+        </div>
+        <p class="help">«Girar 90°» pone el diseño de lado: si lo cargaste horizontal y lo quieres vertical, o al revés. Cada toque gira un cuarto de vuelta.</p>
       </section>
 
       <section class="step" data-tab="area">
@@ -1370,6 +1381,27 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   $('gridBtn').addEventListener('click', startGrid);
   $('pulseBtn').addEventListener('click', function () { setPulse(!S.pulse); });
   $('patBtn').addEventListener('click', startPat);
+  /* orientación: con el celular plano no hay gravedad que indique arriba, así que se fija a mano */
+  var ORIENT_DEFAULT = $('orientNote').textContent, enteredFs = false;
+  function orientSay(t) { $('orientNote').textContent = t || ORIENT_DEFAULT; }
+  function orientRevert() { var r = document.querySelector('input[name="orient"][value="auto"]'); if (r) r.checked = true; }
+  function setOrient(mode) {
+    var so = screen.orientation;
+    if (mode === 'auto') {
+      try { if (so && so.unlock) so.unlock(); } catch (e) {}
+      if (enteredFs && document.fullscreenElement && document.exitFullscreen) { try { document.exitFullscreen(); } catch (e) {} }
+      enteredFs = false; orientSay(''); return;
+    }
+    if (!so || !so.lock) { orientRevert(); orientSay('Este navegador no deja fijar la orientación desde la página. Usa el bloqueo de rotación del celular (en los ajustes rápidos) y gira el celular como necesites.'); return; }
+    var fail = function () { orientRevert(); orientSay('No pude fijar la orientación. Prueba con la app instalada o usa el bloqueo de rotación del celular.'); };
+    var ok = function () { orientSay('Pantalla fijada en ' + (mode === 'portrait' ? 'vertical' : 'horizontal') + '. Para volver a la rotación normal, elige «Automática».'); };
+    Promise.resolve().then(function () { return so.lock(mode); }).then(ok).catch(function () {
+      var el = document.documentElement;
+      if (!el.requestFullscreen) { fail(); return; }
+      el.requestFullscreen().then(function () { enteredFs = true; return so.lock(mode); }).then(ok).catch(fail);
+    });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="orient"]'), function (r) { r.addEventListener('change', function () { if (r.checked) setOrient(r.value); }); });
   $('resetQuad2').addEventListener('click', function () { stopTrack(); resetQuad(); dirty = true; });
   $('patPts').addEventListener('change', function () { dirty = true; });
   window.__trz = { quad: function () { return S.quad.map(function (p) { return { x: p.x, y: p.y }; }); }, lost: function () { return S.track ? S.track.lost : -1; }, size: function () { return [S.bgW, S.bgH]; }, bench: function () { var T = S.track; if (!T || !T.pat) return -1; var t = performance.now(); for (var i = 0; i < 20; i++) runPat(T); return (performance.now() - t) / 20; }, setQuad: function (q) { S.quad = q.map(function (p) { return { x: p.x, y: p.y }; }); dirty = true; } };
@@ -1398,6 +1430,14 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
     el.addEventListener('change', function () { if (el.checked) { S.fit = el.value; refreshDesign(); dirty = true; } });
   });
   $('designReset').addEventListener('click', function () { resetDesignFit(); dirty = true; });
+  $('designRotate').addEventListener('click', function () {
+    var s = S.srcFull; if (!s) return;
+    var a = document.createElement('canvas'); a.width = s.w; a.height = s.h;
+    a.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(s.data), s.w, s.h), 0, 0);
+    var r = document.createElement('canvas'); r.width = s.h; r.height = s.w;
+    var g = r.getContext('2d'); g.translate(s.h, 0); g.rotate(Math.PI / 2); g.drawImage(a, 0, 0);
+    setDesign(r, false); dirty = true;
+  });
   bindNum('areaW', 'areaW', 5, 3000, false); bindNum('areaH', 'areaH', 5, 3000, false);
   bindNum('cols', 'cols', 1, 12, true); bindNum('rows', 'rows', 1, 12, true);
 
